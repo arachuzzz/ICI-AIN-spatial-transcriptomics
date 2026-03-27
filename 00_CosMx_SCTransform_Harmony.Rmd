@@ -1,0 +1,1038 @@
+---
+title: "CosMx CD45陽性免疫細胞バッジ効果レポート"
+author: "Hiroyuki Arai"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    theme: flatly
+    code_folding: hide
+    fig_width: 12
+    fig_height: 8
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE, 
+  message = FALSE,
+  fig.width = 12, 
+  fig_height = 8,
+  dpi = 150,
+  out.width = "100%",
+  dev = "ragg_png"
+)
+
+# 基本ライブラリ
+library(Seurat)
+library(ggplot2)
+library(dplyr)
+library(tibble)
+library(viridis)
+library(patchwork)
+library(tidyr)
+
+# オプショナルライブラリ
+packages_optional <- c("DT", "knitr", "kableExtra", "pheatmap")
+for(pkg in packages_optional) {
+  if(!require(pkg, character.only = TRUE, quietly = TRUE)) {
+    message("Installing package: ", pkg)
+    install.packages(pkg)
+    library(pkg, character.only = TRUE)
+  }
+}
+
+
+# Mac用フォント設定
+library(systemfonts)
+library(ragg)
+library(showtext)
+showtext_auto()
+
+# ggplotのデフォルトテーマにフォント指定
+theme_set(theme_minimal(base_family = "Hiragino Kaku Gothic Pro"))
+```
+
+# 解析概要 {.tabset .tabset-fade}
+
+## 研究背景と目的
+
+### 研究目的
+本解析では、CosMx Spatial Molecular Imagerで取得した腎臓組織データから**CD45陽性免疫細胞のみを抽出**し、以下を明らかにする：
+
+1. **免疫細胞サブセットの同定と分類**
+2. **病理条件間での免疫細胞分布差異**
+3. **免疫細胞特異的マーカー発現パターン**
+4. **空間的免疫細胞相互作用の解析**
+
+### 解析対象
+- **ICI-AIN** (Immune Checkpoint Inhibitor-Associated AIN): S1, S3
+- **Rejection** (拒絶反応): S0
+- **Drug-AKI** (薬物誘発性急性腎障害): S2
+
+```{r data_loading}
+# データ読み込み
+# 注意: 実際のファイルパスに合わせて変更してください
+obj_full <- readRDS("/Users/HiroyukiArai/Documents/2025年留学/研究関連/研究結果/202509 cosmx-kidney-project/data/processed/cosmx_corrected_harmony_merged_with additional analysis_20250924_153654.rds")
+
+cat("=== 元データ基本情報 ===\n")
+cat("総細胞数:", ncol(obj_full), "\n")
+cat("遺伝子数:", nrow(obj_full), "\n")
+cat("サンプル数:", length(unique(obj_full$sample)), "\n")
+```
+
+## CD45陽性細胞の抽出
+
+```{r cd45_extraction}
+# CD45陽性細胞の確認と抽出
+cat("=== CD45陽性細胞の抽出 ===\n")
+
+# CD45_status列の確認
+if("CD45_status" %in% colnames(obj_full@meta.data)) {
+    cd45_table <- table(obj_full$CD45_status)
+    print(cd45_table)
+    
+    cd45_pos_ratio <- round(sum(obj_full$CD45_status == "CD45+") / ncol(obj_full) * 100, 2)
+    cat("CD45陽性細胞割合:", cd45_pos_ratio, "%\n")
+    
+    # CD45陽性細胞のみ抽出
+    obj <- subset(obj_full, CD45_status == "CD45+")
+    
+} else {
+    # PTPRC遺伝子発現での確認・抽出
+    cat("CD45_status列なし。PTPRC遺伝子発現で確認中...\n")
+    
+    if("PTPRC" %in% rownames(obj_full)) {
+        ptprc_expr <- obj_full[["RNA"]]@data["PTPRC", ]
+        cd45_pos_cells <- sum(ptprc_expr > 0)
+        
+        cat("PTPRC発現細胞数:", cd45_pos_cells, 
+            " (", round(cd45_pos_cells/ncol(obj_full)*100, 2), "%)\n")
+        
+        # PTPRC陽性細胞を抽出
+        obj <- subset(obj_full, subset = PTPRC > 0)
+        
+        # CD45_status列を追加
+        obj$CD45_status <- "CD45+"
+        
+    } else {
+        stop("PTPRC遺伝子も見つかりません。データを確認してください。")
+    }
+}
+
+# 抽出後の基本情報
+cat("\n=== CD45陽性免疫細胞データ基本情報 ===\n")
+cat("CD45陽性細胞数:", ncol(obj), "\n")
+cat("遺伝子数:", nrow(obj), "\n")
+cat("抽出率:", round(ncol(obj)/ncol(obj_full)*100, 2), "%\n")
+
+# サンプル別分布
+cat("\n=== サンプル別CD45陽性細胞分布 ===\n")
+sample_counts <- table(obj$sample, obj$condition)
+print(sample_counts)
+```
+
+```{r bage effect}
+# ====================================================================
+# バッチ効果 vs 生物学的差異の判定（修正版）
+# ====================================================================
+
+cat("====================================\n")
+cat("バッチ効果 vs 生物学的差異の判定\n")
+cat("====================================\n\n")
+
+# === 準備：CD45陽性の判定方法を確認 ===
+has_cd45_status <- "CD45_status" %in% colnames(obj_full@meta.data)
+has_ptprc_gene <- "PTPRC" %in% rownames(obj_full)
+
+cat("データ確認:\n")
+cat("  CD45_status列:", ifelse(has_cd45_status, "あり", "なし"), "\n")
+cat("  PTPRC遺伝子:", ifelse(has_ptprc_gene, "あり", "なし"), "\n\n")
+
+# CD45陽性細胞の判定（柔軟に対応）
+if(has_cd45_status) {
+  # CD45_status列がある場合
+  obj_full$is_cd45_positive <- obj_full$CD45_status == "CD45+"
+  
+} else if(has_ptprc_gene) {
+  # PTPRC遺伝子発現から判定
+  ptprc_expr <- FetchData(obj_full, vars = "PTPRC")
+  obj_full$is_cd45_positive <- ptprc_expr$PTPRC > 0.5
+  
+} else {
+  stop("CD45陽性の判定ができません。CD45_status列もPTPRC遺伝子もありません。")
+}
+
+# ====================================================================
+# 【1. CD45陽性率の確認】
+# ====================================================================
+cat("【1. CD45陽性率の確認】\n")
+
+cd45_summary <- obj_full@meta.data %>%
+  group_by(sample) %>%
+  summarise(
+    total_cells = n(),
+    cd45_positive = sum(is_cd45_positive, na.rm = TRUE),
+    cd45_pct = cd45_positive / total_cells * 100,
+    .groups = 'drop'
+  )
+
+print(cd45_summary)
+
+# 判定
+s3_cd45_pct <- cd45_summary$cd45_pct[cd45_summary$sample == "S3"]
+other_samples <- cd45_summary[cd45_summary$sample != "S3", ]
+other_cd45_pct <- mean(other_samples$cd45_pct)
+cd45_ratio <- s3_cd45_pct / other_cd45_pct
+
+cat(sprintf("\nS3のCD45陽性率: %.1f%%\n", s3_cd45_pct))
+cat(sprintf("他サンプル平均: %.1f%%\n", other_cd45_pct))
+cat(sprintf("比率: %.2f倍\n", cd45_ratio))
+
+if(cd45_ratio > 2) {
+  cat("⚠️ S3のCD45陽性率が2倍以上 → バッチ効果の可能性高い\n")
+  batch_score <- 2
+} else if(cd45_ratio > 1.5) {
+  cat("△ S3のCD45陽性率がやや高い → 要注意\n")
+  batch_score <- 1
+} else if(cd45_ratio < 0.67) {
+  cat("△ S3のCD45陽性率がやや低い → 要注意\n")
+  batch_score <- 1
+} else {
+  cat("✓ CD45陽性率は同程度 → 問題なし\n")
+  batch_score <- 0
+}
+
+# ====================================================================
+# 【2. 全細胞のQC指標比較】
+# ====================================================================
+cat("\n【2. 全細胞のQC指標比較】\n")
+
+qc_stats <- obj_full@meta.data %>%
+  group_by(sample) %>%
+  summarise(
+    n_cells = n(),
+    mean_nCount = mean(nCount_RNA, na.rm = TRUE),
+    sd_nCount = sd(nCount_RNA, na.rm = TRUE),
+    mean_nFeature = mean(nFeature_RNA, na.rm = TRUE),
+    sd_nFeature = sd(nFeature_RNA, na.rm = TRUE),
+    .groups = 'drop'
+  )
+
+print(qc_stats)
+
+# nCountの比較
+s3_ncount <- qc_stats$mean_nCount[qc_stats$sample == "S3"]
+other_ncount <- mean(qc_stats$mean_nCount[qc_stats$sample != "S3"])
+ncount_ratio <- s3_ncount / other_ncount
+
+cat(sprintf("\nS3の平均nCount: %.0f\n", s3_ncount))
+cat(sprintf("他サンプル平均: %.0f\n", other_ncount))
+cat(sprintf("比率: %.2f倍\n", ncount_ratio))
+
+if(abs(ncount_ratio - 1) > 0.5) {
+  cat("⚠️ nCountが大きく異なる (>50%差) → バッチ効果の可能性高い\n")
+  batch_score <- batch_score + 2
+} else if(abs(ncount_ratio - 1) > 0.2) {
+  cat("△ nCountがやや異なる (>20%差) → 要注意\n")
+  batch_score <- batch_score + 1
+} else {
+  cat("✓ nCountは同程度 → 問題なし\n")
+}
+
+# nFeatureの比較
+s3_nfeature <- qc_stats$mean_nFeature[qc_stats$sample == "S3"]
+other_nfeature <- mean(qc_stats$mean_nFeature[qc_stats$sample != "S3"])
+nfeature_ratio <- s3_nfeature / other_nfeature
+
+cat(sprintf("\nS3の平均nFeature: %.0f\n", s3_nfeature))
+cat(sprintf("他サンプル平均: %.0f\n", other_nfeature))
+cat(sprintf("比率: %.2f倍\n", nfeature_ratio))
+
+if(abs(nfeature_ratio - 1) > 0.5) {
+  cat("⚠️ nFeatureが大きく異なる (>50%差) → バッチ効果の可能性高い\n")
+  batch_score <- batch_score + 2
+} else if(abs(nfeature_ratio - 1) > 0.2) {
+  cat("△ nFeatureがやや異なる (>20%差) → 要注意\n")
+  batch_score <- batch_score + 1
+} else {
+  cat("✓ nFeatureは同程度 → 問題なし\n")
+}
+
+# ====================================================================
+# 【3. CD45陽性細胞内のQC比較】
+# ====================================================================
+cat("\n【3. CD45陽性細胞内のQC比較】\n")
+
+# objはCD45陽性細胞のみのはず
+if(exists("obj") && ncol(obj) > 0) {
+  
+  cd45_qc <- obj@meta.data %>%
+    group_by(sample) %>%
+    summarise(
+      n_cells = n(),
+      mean_nCount = mean(nCount_RNA, na.rm = TRUE),
+      mean_nFeature = mean(nFeature_RNA, na.rm = TRUE),
+      .groups = 'drop'
+    )
+  
+  print(cd45_qc)
+  
+  # S3 vs 他の比較
+  s3_cd45_ncount <- cd45_qc$mean_nCount[cd45_qc$sample == "S3"]
+  other_cd45_ncount <- mean(cd45_qc$mean_nCount[cd45_qc$sample != "S3"])
+  cd45_ncount_ratio <- s3_cd45_ncount / other_cd45_ncount
+  
+  cat(sprintf("\nCD45陽性細胞のnCount比較:\n"))
+  cat(sprintf("  S3: %.0f\n", s3_cd45_ncount))
+  cat(sprintf("  他サンプル平均: %.0f\n", other_cd45_ncount))
+  cat(sprintf("  比率: %.2f倍\n", cd45_ncount_ratio))
+  
+  if(abs(cd45_ncount_ratio - 1) > 0.3) {
+    cat("⚠️ CD45陽性細胞内でもQCが異なる → バッチ効果の可能性\n")
+    batch_score <- batch_score + 1
+  } else {
+    cat("✓ CD45陽性細胞内のQCは同等 → 生物学的差異を支持\n")
+    batch_score <- batch_score - 1
+  }
+  
+} else {
+  cat("CD45陽性細胞データ(obj)が見つかりません\n")
+}
+
+# ====================================================================
+# 【4. データソース別の比較】
+# ====================================================================
+cat("\n【4. データソース別の比較】\n")
+
+source_comparison <- obj_full@meta.data %>%
+  mutate(data_source = ifelse(sample == "S3", "Single-RDS", "Multi-RDS")) %>%
+  group_by(data_source) %>%
+  summarise(
+    n_cells = n(),
+    cd45_pct = sum(is_cd45_positive, na.rm = TRUE) / n() * 100,
+    mean_nCount = mean(nCount_RNA, na.rm = TRUE),
+    mean_nFeature = mean(nFeature_RNA, na.rm = TRUE),
+    .groups = 'drop'
+  )
+
+print(source_comparison)
+
+# ====================================================================
+# 【5. 視覚化】
+# ====================================================================
+cat("\n【5. 視覚化】\n")
+
+library(ggplot2)
+library(patchwork)
+
+# CD45陽性率の比較
+p_cd45 <- ggplot(cd45_summary, 
+                 aes(x = sample, y = cd45_pct, fill = sample)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = sprintf("%.1f%%", cd45_pct)), 
+            vjust = -0.5, size = 5) +
+  geom_hline(yintercept = mean(cd45_summary$cd45_pct), 
+             linetype = "dashed", color = "red") +
+  labs(title = "サンプル別CD45陽性細胞率",
+       x = "サンプル", y = "CD45+ 細胞率 (%)") +
+  theme_minimal(base_size = 14) +
+  theme(legend.position = "none")
+
+# QC指標の比較
+p_ncount <- ggplot(qc_stats, 
+                   aes(x = sample, y = mean_nCount, fill = sample)) +
+  geom_bar(stat = "identity") +
+  geom_errorbar(aes(ymin = mean_nCount - sd_nCount, 
+                    ymax = mean_nCount + sd_nCount),
+                width = 0.2) +
+  geom_hline(yintercept = mean(qc_stats$mean_nCount),
+             linetype = "dashed", color = "red") +
+  labs(title = "サンプル別平均UMI数",
+       x = "サンプル", y = "平均nCount_RNA") +
+  theme_minimal(base_size = 14) +
+  theme(legend.position = "none")
+
+p_nfeature <- ggplot(qc_stats,
+                     aes(x = sample, y = mean_nFeature, fill = sample)) +
+  geom_bar(stat = "identity") +
+  geom_errorbar(aes(ymin = mean_nFeature - sd_nFeature,
+                    ymax = mean_nFeature + sd_nFeature),
+                width = 0.2) +
+  geom_hline(yintercept = mean(qc_stats$mean_nFeature),
+             linetype = "dashed", color = "red") +
+  labs(title = "サンプル別平均検出遺伝子数",
+       x = "サンプル", y = "平均nFeature_RNA") +
+  theme_minimal(base_size = 14) +
+  theme(legend.position = "none")
+
+print(p_cd45)
+print(p_ncount + p_nfeature)
+
+# ====================================================================
+# 【総合判定】
+# ====================================================================
+cat("\n====================================\n")
+cat("【総合判定】\n")
+cat("====================================\n")
+cat("バッチ効果スコア:", batch_score, "\n")
+
+if(batch_score >= 4) {
+  cat("\n⚠️⚠️ 高確率でバッチ効果あり\n")
+  cat("推奨: より強力な補正、またはダウンサンプリング\n")
+} else if(batch_score >= 2) {
+  cat("\n⚠️ バッチ効果の可能性あり\n")
+  cat("推奨: 追加検証、サンプル別解析で補完\n")
+} else if(batch_score <= -1) {
+  cat("\n✓ 主に生物学的差異と判断\n")
+  cat("推奨: 現状のHarmony統合で問題なし\n")
+} else {
+  cat("\n△ 判断困難（両方の要素が混在）\n")
+  cat("推奨: 追加解析で慎重に判断\n")
+}
+
+cat("\n詳細な解釈については結果を共有してください\n")
+```
+
+
+cat("=== データ読み込み ===\n")
+```{r data loading}
+# 統合前の元データを読み込み（業者提供の生データ）
+multi_rds_path <- "/Users/HiroyukiArai/Documents/大学院/研究結果/2024村上先生CosMX/naoka_full_export_102523/f4721922-fa16-440e-85ed-7f5812c05879_seuratObject.RDS"
+single_rds_path <- "/Users/HiroyukiArai/Documents/大学院/研究結果/2024村上先生CosMX/naoka_kidney10724/96cc2984-7ebb-4685-ac5f-b7863c9d9dd9_seuratObject.RDS"
+
+obj_multi <- readRDS(multi_rds_path)
+obj_single <- readRDS(single_rds_path)
+
+cat("Multi-RDS (細胞数):",  ncol(obj_multi),  "\n")
+cat("Single-RDS (細胞数):", ncol(obj_single), "\n")
+
+# サンプル情報の追加・標準化（20250903と同様の処理）
+# obj_multiのサンプル列を確認
+sample_col <- NULL
+possible_cols <- c("Run_Tissue_name", "orig.ident", "sample")
+for(col in possible_cols) {
+  if(col %in% colnames(obj_multi@meta.data)) {
+    sample_col <- col
+    break
+  }
+}
+
+if(!is.null(sample_col)) {
+  obj_multi$sample <- obj_multi@meta.data[[sample_col]]
+}
+
+obj_single$sample <- "S3"
+
+cat("サンプル情報追加完了\n")
+```
+
+cat("=== 統合準備 ===\n")
+```{r integration preparation}
+# S0, S1, S2のみ抽出（obj_multiから）
+samples_to_keep <- c("S0", "S1", "S2")
+cells_multi <- rownames(obj_multi@meta.data)[obj_multi$sample %in% samples_to_keep]
+obj_multi_filtered <- subset(obj_multi, cells = cells_multi)
+
+cat("Multi-RDS抽出後:", ncol(obj_multi_filtered), "\n")
+cat("サンプル分布:", paste(table(obj_multi_filtered$sample), collapse = ", "), "\n")
+
+# マージ
+obj_merged <- merge(
+  x = obj_multi_filtered,
+  y = obj_single,
+  add.cell.ids = c("Multi", "S3"),
+  merge.data = TRUE
+)
+
+cat("\n統合前の総細胞数:", ncol(obj_merged), "\n")
+cat("サンプル別細胞数:\n")
+print(table(obj_merged$sample))
+
+# データソース列追加
+obj_merged$data_source <- ifelse(obj_merged$sample == "S3", "Single-RDS", "Multi-RDS")
+```
+
+cat("=== 統合前のQC確認 ===\n")
+```{r quality check}
+qc_before <- obj_merged@meta.data %>%
+  group_by(sample) %>%
+  summarise(
+    n_cells = n(),
+    mean_nCount = mean(nCount_RNA, na.rm = TRUE),
+    mean_nFeature = mean(nFeature_RNA, na.rm = TRUE),
+    .groups = 'drop'
+  )
+
+print(qc_before)
+
+# 視覚化
+p_qc_before <- ggplot(qc_before, aes(x = sample, y = mean_nCount, fill = sample)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = round(mean_nCount)), vjust = -0.5) +
+  labs(title = "統合前：サンプル別平均UMI数",
+       subtitle = "S3の高いUMI数に注目",
+       y = "平均nCount_RNA") +
+  theme_minimal(base_size = 14)
+
+print(p_qc_before)
+```
+
+cat("=== SCTransform開始 ===\n")
+```{r SCTransform}
+# SCTransformの実行
+# 重要：デフォルトでnCount_RNAを回帰する
+obj_merged <- SCTransform(
+  obj_merged,
+  method = "glmGamPoi",              # 高速・推奨
+  vars.to.regress = "nCount_RNA",    # UMI数を明示的に回帰
+  vst.flavor = "v2",                 # 最新版
+  verbose = TRUE,
+  return.only.var.genes = FALSE      # 全遺伝子を保持
+)
+
+cat("\nSCTransform完了\n")
+cat("作成されたアッセイ:", names(obj_merged@assays), "\n")
+```
+
+cat("=== PCA実行 ===\n")
+```{r PCA_Harmony}
+
+# PCA（SCTアッセイを使用）
+DefaultAssay(obj_merged) <- "SCT"
+obj_merged <- RunPCA(obj_merged, 
+                     npcs = 30, 
+                     verbose = FALSE)
+
+cat("PCA完了\n")
+
+# 統合前のUMAP（比較用）
+obj_merged <- RunUMAP(obj_merged,
+                      reduction = "pca",
+                      dims = 1:30,
+                      reduction.name = "umap.unintegrated.sct",
+                      verbose = FALSE)
+
+cat("統合前UMAP完了\n")
+
+# ====================================================================
+# Harmony統合（直接HarmonyMatrix使用）
+# ====================================================================
+cat("\n=== Harmony統合開始 ===\n")
+
+# PCA埋め込みを取得
+pca_embeddings <- Embeddings(obj_merged, reduction = "pca")[, 1:30]
+
+# Harmonyで統合
+harmony_embeddings <- harmony::HarmonyMatrix(
+  data_mat = pca_embeddings,
+  meta_data = obj_merged@meta.data,
+  vars_use = "sample",
+  do_pca = FALSE,
+  verbose = TRUE,
+  max.iter.harmony = 50
+)
+
+# Harmony結果をSeuratオブジェクトに追加
+obj_merged[["harmony"]] <- CreateDimReducObject(
+  embeddings = harmony_embeddings,
+  key = "harmony_",
+  assay = DefaultAssay(obj_merged)
+)
+
+cat("Harmony統合完了\n")
+
+# 統合後のクラスタリング
+obj_merged <- FindNeighbors(obj_merged,
+                            reduction = "harmony",
+                            dims = 1:30,
+                            verbose = FALSE)
+
+obj_merged <- FindClusters(obj_merged,
+                           resolution = 0.15,
+                           cluster.name = "harmony_clusters",
+                           verbose = FALSE)
+
+# 統合後のUMAP
+obj_merged <- RunUMAP(obj_merged,
+                      reduction = "harmony",
+                      dims = 1:30,
+                      reduction.name = "umap.harmony.sct",
+                      verbose = FALSE)
+
+cat("UMAP作成完了\n")
+```
+
+cat("=== 統合結果の可視化 ===\n")
+```{r Visualization}
+# ====================================================================
+# バッチ効果の定量評価（修正版）
+# ====================================================================
+
+# data_source列の存在確認と再作成
+if(!"data_source" %in% colnames(obj_merged@meta.data)) {
+  cat("data_source列を再作成します\n")
+  obj_merged$data_source <- ifelse(obj_merged$sample == "S3", 
+                                   "Single-RDS", "Multi-RDS")
+}
+
+# クラスター列の確認
+cluster_col <- NULL
+if("harmony_clusters" %in% colnames(obj_merged@meta.data)) {
+  cluster_col <- "harmony_clusters"
+} else if("seurat_clusters" %in% colnames(obj_merged@meta.data)) {
+  cluster_col <- "seurat_clusters"
+} else {
+  stop("クラスター列が見つかりません")
+}
+
+cat("使用するクラスター列:", cluster_col, "\n\n")
+
+# クラスター内のサンプル混合度
+cluster_mixing <- obj_merged@meta.data %>%
+  group_by(.data[[cluster_col]]) %>%
+  summarise(
+    n_cells = n(),
+    s0_pct = sum(sample == "S0", na.rm = TRUE) / n() * 100,
+    s1_pct = sum(sample == "S1", na.rm = TRUE) / n() * 100,
+    s2_pct = sum(sample == "S2", na.rm = TRUE) / n() * 100,
+    s3_pct = sum(sample == "S3", na.rm = TRUE) / n() * 100,
+    multi_rds_pct = sum(data_source == "Multi-RDS", na.rm = TRUE) / n() * 100,
+    single_rds_pct = sum(data_source == "Single-RDS", na.rm = TRUE) / n() * 100,
+    .groups = 'drop'
+  ) %>%
+  arrange(desc(n_cells))
+
+# 列名をクラスターに統一（表示用）
+names(cluster_mixing)[1] <- "cluster"
+
+cat("\nクラスター別サンプル混合度（上位20）:\n")
+print(head(cluster_mixing, 20))
+
+# S3優位クラスターの検出
+s3_dominated <- cluster_mixing %>%
+  filter(s3_pct > 70) %>%
+  arrange(desc(n_cells))
+
+if(nrow(s3_dominated) > 0) {
+  cat("\n⚠️ S3が70%以上を占めるクラスター:\n")
+  print(s3_dominated)
+  cat(sprintf("\n合計細胞数: %d (全体の%.1f%%)\n",
+              sum(s3_dominated$n_cells),
+              sum(s3_dominated$n_cells) / ncol(obj_merged) * 100))
+  
+  # 比較用：元の解析では何個だったか記載
+  cat("\n参考：既存解析（NormalizeData）では複数のS3優位クラスターあり\n")
+} else {
+  cat("\n✓✓✓ S3が極端に優位なクラスターなし！\n")
+  cat("→ SCTransformが効果的に機能している可能性\n")
+}
+
+# 視覚化：クラスター内サンプル構成
+library(tidyr)
+
+# 上位20クラスターのみプロット
+top_clusters <- head(cluster_mixing, 20)
+
+cluster_composition <- top_clusters %>%
+  select(cluster, s0_pct, s1_pct, s2_pct, s3_pct) %>%
+  pivot_longer(cols = c(s0_pct, s1_pct, s2_pct, s3_pct),
+               names_to = "sample_type",
+               values_to = "percentage") %>%
+  mutate(sample = gsub("_pct", "", sample_type),
+         sample = toupper(sample))
+
+p_composition <- ggplot(cluster_composition,
+                        aes(x = factor(cluster), y = percentage, fill = sample)) +
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values = c("S0" = "#E41A1C", "S1" = "#377EB8",
+                                "S2" = "#4DAF4A", "S3" = "#984EA3")) +
+  labs(title = "クラスター内サンプル構成（上位20クラスター）",
+       subtitle = "SCTransform + Harmony統合後",
+       x = "クラスター", y = "構成比 (%)", fill = "サンプル") +
+  theme_minimal(base_size = 14) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+print(p_composition)
+
+# データソース別構成
+source_composition <- top_clusters %>%
+  select(cluster, multi_rds_pct, single_rds_pct) %>%
+  pivot_longer(cols = c(multi_rds_pct, single_rds_pct),
+               names_to = "source_type",
+               values_to = "percentage") %>%
+  mutate(source = ifelse(grepl("multi", source_type), 
+                        "Multi-RDS", "Single-RDS"))
+
+p_source <- ggplot(source_composition,
+                   aes(x = factor(cluster), y = percentage, fill = source)) +
+  geom_bar(stat = "identity") +
+  geom_hline(yintercept = 50, linetype = "dashed", 
+             color = "red", alpha = 0.5) +
+  scale_fill_manual(values = c("Multi-RDS" = "#FF6B6B", 
+                               "Single-RDS" = "#4ECDC4")) +
+  labs(title = "クラスター内データソース構成（バッチ効果評価）",
+       subtitle = "赤線=50%。極端な偏りがないか確認",
+       x = "クラスター", y = "構成比 (%)", fill = "データソース") +
+  theme_minimal(base_size = 14) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+print(p_source)
+
+# 混合エントロピーの計算
+calculate_entropy <- function(proportions) {
+  props <- proportions[proportions > 0]
+  if(length(props) == 0) return(0)
+  -sum(props * log2(props))
+}
+
+entropy_eval <- cluster_mixing %>%
+  filter(n_cells > 100) %>%  # 大きなクラスターのみ
+  rowwise() %>%
+  mutate(
+    sample_entropy = calculate_entropy(c(s0_pct, s1_pct, s2_pct, s3_pct) / 100),
+    source_entropy = calculate_entropy(c(multi_rds_pct, single_rds_pct) / 100)
+  ) %>%
+  ungroup()
+
+avg_sample_entropy <- mean(entropy_eval$sample_entropy, na.rm = TRUE)
+avg_source_entropy <- mean(entropy_eval$source_entropy, na.rm = TRUE)
+
+cat("\n=== 混合エントロピー評価 ===\n")
+cat(sprintf("平均サンプルエントロピー: %.3f (理想値: 2.0)\n", 
+            avg_sample_entropy))
+cat(sprintf("平均ソースエントロピー: %.3f (理想値: 1.0)\n", 
+            avg_source_entropy))
+
+if(avg_source_entropy > 0.7) {
+  cat("✓ データソース間の混合は良好\n")
+} else {
+  cat("△ データソース間の混合は不十分\n")
+}
+
+# 総合評価スコア
+cat("\n=== SCTransformの効果評価 ===\n")
+cat("S3優位クラスター数:", nrow(s3_dominated), "\n")
+cat("混合エントロピー:", round(avg_source_entropy, 3), "\n")
+
+if(nrow(s3_dominated) == 0 && avg_source_entropy > 0.7) {
+  cat("\n✓✓✓ SCTransformが効果的に機能！\n")
+  cat("→ バッチ効果が大幅に改善された可能性\n")
+} else if(nrow(s3_dominated) <= 2 && avg_source_entropy > 0.5) {
+  cat("\n✓ SCTransformが部分的に効果あり\n")
+  cat("→ 標準手法よりは改善\n")
+} else {
+  cat("\n△ SCTransformでも完全には解消されず\n")
+  cat("→ 10倍のUMI差は補正の限界を超えている可能性\n")
+}
+```
+
+cat("=== 既存解析との比較 ===\n")
+```{r Comparison}
+# 既存のHarmony統合データを読み込み（比較用）
+obj_original <- readRDS("/Users/HiroyukiArai/Documents/2025年留学/研究関連/研究結果/202509 cosmx-kidney-project/data/processed/cosmx_corrected_harmony_merged_with additional analysis_20250924_153654.rds")
+
+cat("既存解析:\n")
+cat("  細胞数:", ncol(obj_original), "\n")
+cat("  Reductions:", names(obj_original@reductions), "\n")
+
+cat("\nSCTransform解析:\n")
+cat("  細胞数:", ncol(obj_merged), "\n")
+cat("  Reductions:", names(obj_merged@reductions), "\n")
+
+# 比較表の作成
+comparison_summary <- data.frame(
+  手法 = c("既存（NormalizeData）", "新規（SCTransform）"),
+  バッチ効果補正 = c("Harmony", "SCTransform + Harmony"),
+  S3優位クラスター数 = c(
+    "要確認",
+    nrow(s3_dominated)
+  ),
+  平均混合エントロピー = c(
+    "要確認",
+    round(mean(entropy_eval$sample_entropy, na.rm = TRUE), 3)
+  )
+)
+
+print(comparison_summary)
+```
+
+---
+
+
+
+# 結果のまとめと保存
+```{r save_results}
+cat("=== SCTransform版統合データの保存 ===\n")
+
+# 保存パス
+output_path <- "/Users/HiroyukiArai/Documents/2025年留学/研究関連/研究結果/202509 cosmx-kidney-project/data/processed/20251006 cosmx_sctransform_harmony_merged.rds"
+
+# 保存前の最終確認
+cat("保存するオブジェクトの情報:\n")
+cat("  細胞数:", ncol(obj_merged), "\n")
+cat("  遺伝子数:", nrow(obj_merged), "\n")
+cat("  アッセイ:", names(obj_merged@assays), "\n")
+cat("  Reductions:", names(obj_merged@reductions), "\n")
+
+# 保存
+saveRDS(obj_merged, file = output_path)
+
+cat("\n保存完了:", output_path, "\n")
+cat("ファイルサイズ:", 
+    round(file.info(output_path)$size / 1024^2, 1), "MB\n")
+```
+
+```{r UMI comparison}
+# ====================================================================
+# SCTransform後のサンプル間UMI比較
+# ====================================================================
+
+cat("\n====================================\n")
+cat("SCTransform後のサンプル間UMI比較\n")
+cat("====================================\n\n")
+
+# === 1. 基本統計量の比較 ===
+cat("【1】基本統計量の比較\n")
+
+# RNAアッセイ（元のカウント）の統計
+umi_stats_rna <- obj_merged@meta.data %>%
+  group_by(sample) %>%
+  summarise(
+    n_cells = n(),
+    mean_UMI_RNA = mean(nCount_RNA, na.rm = TRUE),
+    median_UMI_RNA = median(nCount_RNA, na.rm = TRUE),
+    sd_UMI_RNA = sd(nCount_RNA, na.rm = TRUE),
+    .groups = 'drop'
+  )
+
+cat("\n元のRNAカウント（nCount_RNA）:\n")
+print(umi_stats_rna)
+
+# SCTアッセイのカウント統計（正規化後）
+DefaultAssay(obj_merged) <- "SCT"
+
+# SCTアッセイのcountsスロットから直接取得
+sct_counts <- GetAssayData(obj_merged, assay = "SCT", slot = "counts")
+obj_merged$nCount_SCT <- colSums(sct_counts)
+obj_merged$nFeature_SCT <- colSums(sct_counts > 0)
+
+umi_stats_sct <- obj_merged@meta.data %>%
+  group_by(sample) %>%
+  summarise(
+    n_cells = n(),
+    mean_UMI_SCT = mean(nCount_SCT, na.rm = TRUE),
+    median_UMI_SCT = median(nCount_SCT, na.rm = TRUE),
+    sd_UMI_SCT = sd(nCount_SCT, na.rm = TRUE),
+    mean_Feature_SCT = mean(nFeature_SCT, na.rm = TRUE),
+    .groups = 'drop'
+  )
+
+cat("\nSCTransform後のカウント（nCount_SCT）:\n")
+print(umi_stats_sct)
+
+# === 2. 補正前後の比較テーブル ===
+cat("\n【2】補正前後の比較\n")
+
+comparison_table <- umi_stats_rna %>%
+  left_join(umi_stats_sct, by = "sample") %>%
+  mutate(
+    UMI_reduction = (mean_UMI_SCT / mean_UMI_RNA) * 100,
+    .groups = 'drop'
+  ) %>%
+  select(sample, 
+         mean_UMI_RNA, mean_UMI_SCT, UMI_reduction,
+         mean_Feature_SCT)
+
+cat("\nサンプル別のUMI変化:\n")
+print(comparison_table)
+
+# S3と他サンプルの比率を計算
+s3_ratio_before <- umi_stats_rna$mean_UMI_RNA[umi_stats_rna$sample == "S3"] / 
+                   mean(umi_stats_rna$mean_UMI_RNA[umi_stats_rna$sample != "S3"])
+
+s3_ratio_after <- umi_stats_sct$mean_UMI_SCT[umi_stats_sct$sample == "S3"] / 
+                  mean(umi_stats_sct$mean_UMI_SCT[umi_stats_sct$sample != "S3"])
+
+cat(sprintf("\nS3の平均UMI比率（vs 他サンプル）:\n"))
+cat(sprintf("  補正前: %.2f倍\n", s3_ratio_before))
+cat(sprintf("  補正後: %.2f倍\n", s3_ratio_after))
+cat(sprintf("  改善度: %.1f%%\n", (1 - s3_ratio_after/s3_ratio_before) * 100))
+
+if(s3_ratio_after < 1.3) {
+  cat("✓ SCTransformにより十分に均一化されました\n")
+} else if(s3_ratio_after < 2.0) {
+  cat("△ まだ若干の差が残っています\n")
+} else {
+  cat("⚠️ 大きな差が残存しています\n")
+}
+
+# === 3. 視覚化 ===
+cat("\n【3】視覚化\n")
+
+library(patchwork)
+
+# 3-1. バイオリンプロット（補正前）
+p_violin_before <- ggplot(obj_merged@meta.data, 
+                          aes(x = sample, y = nCount_RNA, fill = sample)) +
+  geom_violin(trim = FALSE, alpha = 0.7) +
+  geom_boxplot(width = 0.1, fill = "white", outlier.shape = NA) +
+  scale_y_log10(labels = scales::comma) +
+  labs(title = "補正前: 元のUMIカウント",
+       x = "サンプル", y = "nCount_RNA (log10)") +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "none")
+
+# 3-2. バイオリンプロット（補正後）
+p_violin_after <- ggplot(obj_merged@meta.data, 
+                         aes(x = sample, y = nCount_SCT, fill = sample)) +
+  geom_violin(trim = FALSE, alpha = 0.7) +
+  geom_boxplot(width = 0.1, fill = "white", outlier.shape = NA) +
+  scale_y_log10(labels = scales::comma) +
+  labs(title = "補正後: SCTransform正規化カウント",
+       x = "サンプル", y = "nCount_SCT (log10)") +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "none")
+
+# 並べて表示
+print(p_violin_before | p_violin_after)
+
+# 3-3. 密度プロット（重ね合わせ）
+plot_data_density <- obj_merged@meta.data %>%
+  select(sample, nCount_RNA, nCount_SCT) %>%
+  pivot_longer(cols = c(nCount_RNA, nCount_SCT),
+               names_to = "type",
+               values_to = "count") %>%
+  mutate(type = ifelse(type == "nCount_RNA", "補正前", "補正後"))
+
+p_density <- ggplot(plot_data_density, 
+                    aes(x = count, fill = sample, linetype = type)) +
+  geom_density(alpha = 0.4) +
+  scale_x_log10(labels = scales::comma) +
+  facet_wrap(~type, ncol = 2) +
+  labs(title = "UMI分布の比較：補正前後",
+       x = "UMI Count (log10)", y = "密度") +
+  theme_minimal(base_size = 12)
+
+print(p_density)
+
+# 3-4. 平均UMIの棒グラフ（補正前後比較）
+plot_data_bar <- comparison_table %>%
+  select(sample, mean_UMI_RNA, mean_UMI_SCT) %>%
+  pivot_longer(cols = c(mean_UMI_RNA, mean_UMI_SCT),
+               names_to = "type",
+               values_to = "mean_UMI") %>%
+  mutate(type = ifelse(type == "mean_UMI_RNA", "補正前", "補正後"))
+
+p_bar <- ggplot(plot_data_bar, 
+                aes(x = sample, y = mean_UMI, fill = type)) +
+  geom_bar(stat = "identity", position = position_dodge(0.8)) +
+  geom_text(aes(label = round(mean_UMI)), 
+            position = position_dodge(0.8), vjust = -0.5, size = 3.5) +
+  labs(title = "サンプル別平均UMI：補正前後の比較",
+       subtitle = "S3の高UMIがSCTransformで是正されているか確認",
+       x = "サンプル", y = "平均UMI", fill = "処理") +
+  theme_minimal(base_size = 12)
+
+print(p_bar)
+
+# === 4. 統計的検定 ===
+cat("\n【4】統計的検定\n")
+
+# 補正前のKruskal-Wallis検定
+kw_before <- kruskal.test(nCount_RNA ~ sample, data = obj_merged@meta.data)
+cat("\n補正前のKruskal-Wallis検定:\n")
+print(kw_before)
+
+# 補正後のKruskal-Wallis検定
+kw_after <- kruskal.test(nCount_SCT ~ sample, data = obj_merged@meta.data)
+cat("\n補正後のKruskal-Wallis検定:\n")
+print(kw_after)
+
+if(kw_after$p.value > kw_before$p.value) {
+  cat("\n✓ p値が上昇 → サンプル間の差が減少（補正効果あり）\n")
+} else {
+  cat("\n△ p値は低いまま → まだ有意差が残存\n")
+}
+
+# ペアワイズ比較（補正後）
+pairwise_after <- pairwise.wilcox.test(
+  obj_merged@meta.data$nCount_SCT,
+  obj_merged@meta.data$sample,
+  p.adjust.method = "bonferroni"
+)
+
+cat("\n補正後のペアワイズ比較（Bonferroni補正）:\n")
+print(pairwise_after)
+
+# === 5. データソース別の比較 ===
+cat("\n【5】データソース別の比較（Multi-RDS vs Single-RDS）\n")
+
+source_comparison_umi <- obj_merged@meta.data %>%
+  group_by(data_source) %>%
+  summarise(
+    n_cells = n(),
+    mean_UMI_RNA = mean(nCount_RNA, na.rm = TRUE),
+    mean_UMI_SCT = mean(nCount_SCT, na.rm = TRUE),
+    reduction_pct = (mean_UMI_SCT / mean_UMI_RNA) * 100,
+    .groups = 'drop'
+  )
+
+print(source_comparison_umi)
+
+# === 6. 結果の保存 ===
+cat("\n【6】結果の保存\n")
+
+# 保存先ディレクトリの作成（存在しない場合）
+results_dir <- "/Users/HiroyukiArai/Documents/2025年留学/研究関連/研究結果/202509 cosmx-kidney-project/20251006 results"
+figures_dir <- "/Users/HiroyukiArai/Documents/2025年留学/研究関連/研究結果/202509 cosmx-kidney-project/20251006 figures"
+
+if(!dir.exists(results_dir)) {
+  dir.create(results_dir, recursive = TRUE)
+  cat("resultsディレクトリを作成しました\n")
+}
+
+if(!dir.exists(figures_dir)) {
+  dir.create(figures_dir, recursive = TRUE)
+  cat("figuresディレクトリを作成しました\n")
+}
+
+# 統計サマリー保存
+csv_path <- file.path(results_dir, "sctransform_umi_comparison.csv")
+write.csv(comparison_table, csv_path, row.names = FALSE)
+cat("CSV保存完了:", csv_path, "\n")
+
+# プロット保存
+ggsave(file.path(figures_dir, "sctransform_umi_violin_comparison.pdf"),
+       p_violin_before | p_violin_after, width = 14, height = 6)
+
+ggsave(file.path(figures_dir, "sctransform_umi_bar_comparison.pdf"),
+       p_bar, width = 10, height = 6)
+
+ggsave(file.path(figures_dir, "sctransform_umi_density_comparison.pdf"),
+       p_density, width = 12, height = 6)
+
+cat("\n✓ すべての結果を保存しました\n")
+
+# === 7. まとめ ===
+cat("\n====================================\n")
+cat("【まとめ】\n")
+cat("====================================\n")
+cat(sprintf("S3のUMI比率: %.2f倍 → %.2f倍\n", s3_ratio_before, s3_ratio_after))
+cat(sprintf("改善度: %.1f%%\n", (1 - s3_ratio_after/s3_ratio_before) * 100))
+cat(sprintf("Kruskal-Wallis p値: %.2e → %.2e\n", 
+            kw_before$p.value, kw_after$p.value))
+
+if(s3_ratio_after < 1.5 && kw_after$p.value > 0.01) {
+  cat("\n★★★★★ SCTransformが非常に効果的\n")
+  cat("→ 4サンプル統合解析を推奨\n")
+} else if(s3_ratio_after < 2.0) {
+  cat("\n★★★☆☆ SCTransformが部分的に効果的\n")
+  cat("→ 慎重に解釈しながら統合解析可能\n")
+} else {
+  cat("\n★★☆☆☆ SCTransformでも完全には是正されず\n")
+  cat("→ サンプル別解析も併用推奨\n")
+}
+```

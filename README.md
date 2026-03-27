@@ -1,4 +1,4 @@
-# 20260327 Integrated Spatial and Single-Cell Transcriptomics of Matched Human Kidney Biopsies Reveals Distinct Immune Architecture in Immune Checkpoint Inhibitor-Associated Acute Kidney Injury
+# Integrated Spatial and Single-Cell Transcriptomics of Matched Human Kidney Biopsies Reveals Distinct Immune Architecture in Immune Checkpoint Inhibitor-Associated Acute Kidney Injury
 
 ## Overview
 
@@ -28,7 +28,8 @@ All analysis scripts are R Markdown (`.Rmd`) files, numbered in recommended exec
 
 | # | File | Description | Manuscript |
 |---|------|-------------|------------|
-| 05 | `05_CosMx_SCTransform_annotation.Rmd` | SCTransform normalization, Harmony batch correction, marker-based hierarchical cell type annotation (module score approach) | Methods, Figure 1 |
+| 00 | `00_CosMx_SCTransform_Harmony.Rmd` | CosMx raw data loading, SCTransform normalization, Harmony batch correction across 4 samples, batch effect evaluation | Methods |
+| 05 | `05_CosMx_SCTransform_annotation.Rmd` | Marker-based hierarchical cell type annotation using module scores on the SCTransform+Harmony-integrated object | Methods, Figure 1 |
 | 06 | `06_CosMx_signature_projection.Rmd` | Projection of scFFPE-derived signatures onto CosMx spatial data using AddModuleScore | Methods, Figure 2 |
 
 ### Figure Generation
@@ -79,8 +80,8 @@ All analyses were performed in R. Key packages and versions:
 ## Contact
 
 Hiroyuki Arai  
-[Washington University in St. Louis]  
-[araih@wustl.edu]
+[Institution to be added]  
+[Email to be added]
 
 ## License
 
