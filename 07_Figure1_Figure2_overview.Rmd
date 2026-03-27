@@ -1,0 +1,818 @@
+---
+title: "CosMx ICI-AKI Project: Figure 1 & 2 - Publication Quality"
+author: "Hiroyuki Arai"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    code_folding: show
+    theme: cosmo
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE,
+  fig.width = 10,
+  fig.height = 8,
+  dpi = 300
+)
+```
+
+# Overview
+
+**ç›®çš„**: è«–æ–‡æŠ•ç¨¿ç”¨ã®Figure 1ã¨Figure 2ã‚’é«˜å“è³ªã§ä½œæˆ  
+**ãƒ‡ãƒ¼ã‚¿ã‚½ãƒ¼ã‚¹**: Phase 2å®Œäº†ãƒ‡ãƒ¼ã‚¿ï¼ˆCosMx_with_signatures_*.rdsï¼‰  
+**å‡ºåŠ›**: Publication-quality figures (PDF & PNG, 300-600 dpi)
+
+**Figure 1**: Study Design & Data Overview  
+**Figure 2**: ICI-AKI Shows Highest Immune Activation
+
+---
+
+# 1. Setup & Library Loading
+
+```{r libraries}
+# å¿…é ˆãƒ©ã‚¤ãƒ–ãƒ©ãƒª
+library(Seurat)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(patchwork)
+library(RColorBrewer)
+library(viridis)
+library(scales)
+library(gridExtra)
+library(kableExtra)
+
+# ã‚«ãƒ©ãƒ¼ãƒ‘ãƒ¬ãƒƒãƒˆè¨­å®š
+condition_colors <- c(
+  "ICI-AKI" = "#E64B35",      # èµ¤
+  "Rejection" = "#4DBBD5",     # é’
+  "Drug-induced_AKI" = "#00A087" # ç·‘
+)
+
+major_celltype_colors <- c(
+  Epithelial  = "#E64B35FF",  # æ¿ƒã„èµ¤ã€œã‚ªãƒ¬ãƒ³ã‚¸ï¼ˆä¸Šçš®ï¼‰
+  Endothelial = "#4DBBD5FF",  # é’ç³»ï¼ˆè¡€ç®¡å†…çš®ï¼‰
+  Immune      = "#00A087FF",  # ç·‘ï¼ˆå…ç–«ï¼‰
+  Stromal     = "#3C5488FF",  # ç´ºï¼ˆé–“è³ªãƒ»åŸºè³ªï¼‰
+  Other       = "grey70"   # ã‚°ãƒ¬ãƒ¼ç³»
+)
+
+# ãƒ†ãƒ¼ãƒžè¨­å®š
+publication_theme <- theme_classic(base_size = 14) +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 16),
+    axis.title = element_text(face = "bold", size = 14),
+    axis.text = element_text(size = 12),
+    legend.title = element_text(face = "bold", size = 12),
+    legend.text = element_text(size = 11),
+    strip.text = element_text(face = "bold", size = 12),
+    strip.background = element_rect(fill = "white", color = "black")
+  )
+# setupãƒãƒ£ãƒ³ã‚¯å†…ã«è¿½åŠ 
+select <- dplyr::select
+filter <- dplyr::filter
+mutate <- dplyr::mutate
+summarise <- dplyr::summarise
+arrange <- dplyr::arrange
+
+cat("âœ… Libraries loaded\n")
+cat("âœ… Color palettes defined\n")
+cat("âœ… Publication theme set\n")
+```
+
+---
+
+# 2. Data Loading
+
+```{r load_data}
+cat("=== Loading Phase 2 Data ===\n")
+
+# ãƒ‡ãƒ¼ã‚¿ãƒ‘ã‚¹è¨­å®š
+base_dir <- "/Users/HiroyukiArai/Documents/2025å¹´ç•™å­¦/ç ”ç©¶é–¢é€£/ç ”ç©¶çµæžœ/202509 cosmx-kidney-project"
+results_dir <- file.path(base_dir, "results", "figures")
+
+# Phase 2ãƒ‡ã‚£ãƒ¬ã‚¯ãƒˆãƒªæ¤œç´¢
+phase2_dirs <- list.dirs(results_dir, recursive = FALSE)
+phase2_dirs <- phase2_dirs[grepl("20251120_CosMx_Signature_Projection", phase2_dirs)]
+
+if(length(phase2_dirs) == 0) {
+  stop("âŒ Phase 2 directory not found!")
+}
+
+# æœ€æ–°ãƒ‡ã‚£ãƒ¬ã‚¯ãƒˆãƒªå–å¾—
+latest_dir <- phase2_dirs[length(phase2_dirs)]
+cat("Using directory:", latest_dir, "\n")
+
+# RDSãƒ•ã‚¡ã‚¤ãƒ«æ¤œç´¢
+rds_files <- list.files(latest_dir, pattern = "CosMx_with_signatures.*\\.rds$", 
+                        full.names = TRUE, recursive = TRUE)
+
+if(length(rds_files) == 0) {
+  stop("âŒ CosMx RDS file not found!")
+}
+
+# æœ€æ–°ãƒ•ã‚¡ã‚¤ãƒ«èª­ã¿è¾¼ã¿
+cosmx_file <- rds_files[length(rds_files)]
+cat("Loading:", cosmx_file, "\n")
+
+cosmx <- readRDS(cosmx_file)
+
+cat("âœ… Data loaded successfully\n")
+cat("   Cells:", ncol(cosmx), "\n")
+cat("   Genes:", nrow(cosmx), "\n")
+cat("   Samples:", length(unique(cosmx$sample)), "\n")
+
+# ãƒ¡ã‚¿ãƒ‡ãƒ¼ã‚¿ç¢ºèª
+cat("\n=== Metadata Columns ===\n")
+print(colnames(cosmx@meta.data))
+
+# Signature scoreåˆ—ç¢ºèª
+score_cols <- grep("_Score$", colnames(cosmx@meta.data), value = TRUE)
+cat("\n=== Signature Scores Available ===\n")
+print(score_cols)
+
+# åº§æ¨™ç¢ºèª
+coord_cols <- grep("^(x_|y_)", colnames(cosmx@meta.data), value = TRUE)
+cat("\n=== Spatial Coordinates Available ===\n")
+print(coord_cols)
+```
+
+---
+
+# 3. å‡ºåŠ›ãƒ‡ã‚£ãƒ¬ã‚¯ãƒˆãƒªä½œæˆ
+
+```{r output_dirs}
+# ã‚¿ã‚¤ãƒ ã‚¹ã‚¿ãƒ³ãƒ—ä»˜ãå‡ºåŠ›ãƒ‡ã‚£ãƒ¬ã‚¯ãƒˆãƒª
+timestamp <- format(Sys.time(), "%Y%m%d_%H%M%S")
+output_dir <- file.path(base_dir, "results", "figures", 
+                        paste0("20251124_Paper_Figures_", timestamp))
+
+# ã‚µãƒ–ãƒ‡ã‚£ãƒ¬ã‚¯ãƒˆãƒªä½œæˆ
+dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+dir.create(file.path(output_dir, "Figure1"), showWarnings = FALSE)
+dir.create(file.path(output_dir, "Figure2"), showWarnings = FALSE)
+dir.create(file.path(output_dir, "Statistics"), showWarnings = FALSE)
+
+cat("âœ… Output directories created:\n")
+cat("   ", output_dir, "\n")
+```
+
+---
+
+# FIGURE 1: Study Design & Data Overview {.tabset}
+
+## Figure 1C: UMAP - Major Cell Types
+
+```{r figure1c_umap_major_celltype, fig.width=10, fig.height=8}
+cat("=== Figure 1C: UMAP - Major Cell Types ===\n")
+
+# UMAPç¢ºèª
+if(!"umap.harmony.sct" %in% names(cosmx@reductions)) {
+  stop("âŒ UMAP reduction 'umap.harmony.sct' not found!")
+}
+
+# major_celltypeç¢ºèªãƒ»ä¿®æ­£
+if(!"major_celltype" %in% colnames(cosmx@meta.data)) {
+  cat("âš ï¸ major_celltype not found, creating from detailed_celltype...\n")
+  
+  # detailed_celltypeã‹ã‚‰ä½œæˆï¼ˆãƒ•ã‚©ãƒ¼ãƒ«ãƒãƒƒã‚¯ï¼‰
+  if("detailed_celltype" %in% colnames(cosmx@meta.data)) {
+    cosmx$major_celltype <- case_when(
+      grepl("Epithelial|Tubular|Proximal|Distal|Collecting|Podocyte", 
+            cosmx$detailed_celltype, ignore.case = TRUE) ~ "Epithelial",
+      grepl("Immune|T_cell|B_cell|Macrophage|Dendritic|NK|Plasma", 
+            cosmx$detailed_celltype, ignore.case = TRUE) ~ "Immune",
+      grepl("Stromal|Fibroblast|Pericyte|Mesangial", 
+            cosmx$detailed_celltype, ignore.case = TRUE) ~ "Stromal",
+      grepl("Endothelial|Vascular", 
+            cosmx$detailed_celltype, ignore.case = TRUE) ~ "Endothelial",
+      TRUE ~ "Other"
+    )
+  } else {
+    stop("âŒ Neither major_celltype nor detailed_celltype found!")
+  }
+}
+
+# å‡¡ä¾‹ã®é †åºã‚’æŒ‡å®šï¼ˆOther ã‚’ä¸€ç•ªä¸‹ã«ï¼‰
+cosmx$major_celltype <- factor(
+  cosmx$major_celltype,
+  levels = c("Epithelial", "Endothelial", "Immune", "Stromal", "Other")
+)
+
+# UMAPä½œæˆ
+p_umap_major <- DimPlot(
+  cosmx,
+  reduction = "umap.harmony.sct",
+  group.by = "major_celltype",
+  cols = major_celltype_colors,
+  pt.size = 0.1,
+  raster = FALSE,
+  raster.dpi = c(1024, 1024)
+) +
+  labs(
+    title = "Major Cell Types",
+    x = "UMAP 1",
+    y = "UMAP 2"
+  ) +
+  publication_theme +
+  guides(color = guide_legend(override.aes = list(size = 4)))
+
+print(p_umap_major)
+
+# ä¿å­˜ï¼ˆé«˜è§£åƒåº¦ï¼‰
+ggsave(
+  file.path(output_dir, "Figure1", "Figure1C_UMAP_major_celltype.pdf"),
+  p_umap_major, width = 10, height = 8, device = "pdf"
+)
+
+ggsave(
+  file.path(output_dir, "Figure1", "Figure1C_UMAP_major_celltype.png"),
+  p_umap_major, width = 10, height = 8, dpi = 600
+)
+
+cat("âœ… Figure 1C saved\n")
+
+# ç´°èƒžæ•°ã‚µãƒžãƒªãƒ¼
+celltype_summary <- cosmx@meta.data %>%
+  group_by(major_celltype) %>%
+  summarise(
+    n_cells = n(),
+    percentage = round(n() / ncol(cosmx) * 100, 2)
+  ) %>%
+  arrange(desc(n_cells))
+
+cat("\n=== Cell Type Distribution ===\n")
+print(celltype_summary)
+```
+
+## Figure 1D: Cell Type Composition by Sample
+
+```{r figure1d_composition, fig.width=12, fig.height=6}
+cat("=== Figure 1D: Cell Type Composition by Sample ===\n")
+
+# Sample-conditionå¯¾å¿œç¢ºèª
+if(!"condition" %in% colnames(cosmx@meta.data)) {
+  cat("âš ï¸ 'condition' column not found, creating from sample...\n")
+  cosmx$condition <- case_when(
+    cosmx$sample %in% c("S1", "S3") ~ "ICI-AKI",
+    cosmx$sample == "S0" ~ "Rejection",
+    cosmx$sample == "S2" ~ "Drug-induced_AKI",
+    TRUE ~ "Unknown"
+  )
+}
+
+# Sampleåˆ¥ç´°èƒžæ§‹æˆãƒ‡ãƒ¼ã‚¿ä½œæˆ
+composition_data <- cosmx@meta.data %>%
+  group_by(sample, condition, major_celltype) %>%
+  summarise(n_cells = n(), .groups = "drop") %>%
+  group_by(sample) %>%
+  mutate(
+    total_cells = sum(n_cells),
+    percentage = n_cells / total_cells * 100
+  ) %>%
+  ungroup()
+
+# Stacked barplot
+p_composition <- ggplot(composition_data, 
+                        aes(x = sample, y = percentage, fill = major_celltype)) +
+  geom_bar(stat = "identity", color = "black", size = 0.3) +
+  scale_fill_manual(values = major_celltype_colors) +
+  labs(
+    title = "Cell Type Composition by Sample",
+    x = "Sample",
+    y = "Percentage (%)",
+    fill = "Cell Type"
+  ) +
+  publication_theme +
+  theme(legend.position = "right")
+
+print(p_composition)
+
+# ä¿å­˜
+ggsave(
+  file.path(output_dir, "Figure1", "Figure1D_composition_barplot.pdf"),
+  p_composition, width = 10, height = 6, device = "pdf"
+)
+
+ggsave(
+  file.path(output_dir, "Figure1", "Figure1D_composition_barplot.png"),
+  p_composition, width = 10, height = 6, dpi = 600
+)
+
+cat("âœ… Figure 1D saved\n")
+
+# æ•°å€¤ãƒ‡ãƒ¼ã‚¿ä¿å­˜
+write.csv(
+  composition_data,
+  file.path(output_dir, "Statistics", "Figure1D_composition_data.csv"),
+  row.names = FALSE
+)
+
+# ã‚µãƒžãƒªãƒ¼è¡¨ç¤º
+cat("\n=== Composition Summary ===\n")
+composition_wide <- composition_data %>%
+  dplyr::select(sample, condition, major_celltype, percentage) %>%
+  tidyr::pivot_wider(names_from = major_celltype, values_from = percentage, values_fill = 0)
+
+print(composition_wide)
+```
+
+## Figure 1E: QC Metrics
+
+```{r figure1e_qc, fig.width=14, fig.height=10}
+cat("=== Figure 1E: QC Metrics ===\n")
+
+# QCæŒ‡æ¨™ç¢ºèª
+qc_cols <- c("nCount_SCT", "nFeature_SCT")
+missing_qc <- setdiff(qc_cols, colnames(cosmx@meta.data))
+
+if(length(missing_qc) > 0) {
+  cat("âš ï¸ Missing QC columns:", paste(missing_qc, collapse = ", "), "\n")
+  cat("   Attempting to use RNA assay...\n")
+  
+  if("nCount_RNA" %in% colnames(cosmx@meta.data)) {
+    qc_cols <- c("nCount_RNA", "nFeature_RNA")
+  } else {
+    stop("âŒ No QC metrics found!")
+  }
+}
+
+# QCãƒ‡ãƒ¼ã‚¿æº–å‚™
+qc_data <- cosmx@meta.data %>%
+  select(sample, condition, major_celltype, all_of(qc_cols))
+
+# UMI count violin plot
+p_umi <- ggplot(qc_data, aes(x = sample, y = .data[[qc_cols[1]]], fill = condition)) +
+  geom_violin(scale = "width", alpha = 0.7) +
+  geom_boxplot(width = 0.1, outlier.shape = NA) +
+  scale_fill_manual(values = condition_colors) +
+  scale_y_log10(labels = comma) +
+  labs(
+    title = "UMI Counts per Cell",
+    x = "Sample",
+    y = "UMI Count (log10)",
+    fill = "Condition"
+  ) +
+  publication_theme +
+  theme(axis.text.x = element_text(angle = 0))
+
+# Gene count violin plot
+p_gene <- ggplot(qc_data, aes(x = sample, y = .data[[qc_cols[2]]], fill = condition)) +
+  geom_violin(scale = "width", alpha = 0.7) +
+  geom_boxplot(width = 0.1, outlier.shape = NA) +
+  scale_fill_manual(values = condition_colors) +
+  scale_y_log10(labels = comma) +
+  labs(
+    title = "Detected Genes per Cell",
+    x = "Sample",
+    y = "Gene Count (log10)",
+    fill = "Condition"
+  ) +
+  publication_theme +
+  theme(axis.text.x = element_text(angle = 0))
+
+# Major cell typeåˆ¥QC
+p_umi_celltype <- ggplot(qc_data, 
+                         aes(x = major_celltype, y = .data[[qc_cols[1]]], 
+                             fill = major_celltype)) +
+  geom_violin(alpha = 0.7) +
+  geom_boxplot(width = 0.2, outlier.shape = NA) +
+  scale_fill_manual(values = major_celltype_colors) +
+  scale_y_log10(labels = comma) +
+  labs(
+    title = "UMI Counts by Cell Type",
+    x = "Cell Type",
+    y = "UMI Count (log10)"
+  ) +
+  publication_theme +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "none")
+
+# çµ±åˆãƒ—ãƒ­ãƒƒãƒˆ
+p_qc_combined <- (p_umi / p_gene / p_umi_celltype) +
+  plot_layout(heights = c(1, 1, 1))
+
+print(p_qc_combined)
+
+# ä¿å­˜
+ggsave(
+  file.path(output_dir, "Figure1", "Figure1E_QC_metrics.pdf"),
+  p_qc_combined, width = 14, height = 12, device = "pdf"
+)
+
+ggsave(
+  file.path(output_dir, "Figure1", "Figure1E_QC_metrics.png"),
+  p_qc_combined, width = 14, height = 12, dpi = 600
+)
+
+cat("âœ… Figure 1E saved\n")
+
+# QCçµ±è¨ˆã‚µãƒžãƒªãƒ¼
+qc_summary <- qc_data %>%
+  group_by(sample, condition) %>%
+  summarise(
+    n_cells = n(),
+    median_UMI = median(.data[[qc_cols[1]]], na.rm = TRUE),
+    median_genes = median(.data[[qc_cols[2]]], na.rm = TRUE),
+    mean_UMI = mean(.data[[qc_cols[1]]], na.rm = TRUE),
+    mean_genes = mean(.data[[qc_cols[2]]], na.rm = TRUE),
+    .groups = "drop"
+  )
+
+cat("\n=== QC Summary ===\n")
+print(qc_summary)
+
+write.csv(
+  qc_summary,
+  file.path(output_dir, "Statistics", "Figure1E_QC_summary.csv"),
+  row.names = FALSE
+)
+```
+
+---
+
+# FIGURE 2: ICI-AKI Shows Highest Immune Activation {.tabset}
+
+## Figure 2B: Signature UMAP (4 key signatures)
+
+```{r figure2b_signature_umap, fig.width=16, fig.height=12}
+cat("=== Figure 2B: Signature UMAP (ä¿®æ­£ç‰ˆ) ===\n")
+
+# æ­£ã—ã„Signatureåˆ—å
+key_signatures <- c(
+  "T_cell_Exhaustion_1",
+  "Myeloid_Activation_1",
+  "Known_ICI_Markers_1",
+  "ICI_General_Top15_1"
+)
+
+cat("Using signatures:\n")
+print(key_signatures)
+
+# å„ã‚¹ã‚³ã‚¢ã®ç¯„å›²ç¢ºèª
+for(sig in key_signatures) {
+  cat("\n", sig, ":\n")
+  print(summary(cosmx@meta.data[[sig]]))
+}
+
+# UMAPä½œæˆ
+plot_list <- list()
+
+for(i in seq_along(key_signatures)) {
+  sig_name <- key_signatures[i]
+  sig_label <- gsub("_1$", "", sig_name)  # _1ã‚’å‰Šé™¤
+  
+  # ã‚¹ã‚³ã‚¢å€¤ã®ç¢ºèª
+  score_range <- range(cosmx@meta.data[[sig_name]], na.rm = TRUE)
+  
+  p <- FeaturePlot(
+    cosmx,
+    features = sig_name,
+    reduction = "umap.harmony.sct",
+    pt.size = 0.1,
+    raster = FALSE,
+    raster.dpi = c(1024, 1024),
+    order = TRUE
+  ) +
+    scale_color_viridis(option = "magma") +
+    labs(
+      title = sig_label,
+      subtitle = paste0("Range: ", round(score_range[1], 2), " to ", round(score_range[2], 2))
+    ) +
+    publication_theme +
+    theme(
+      legend.position = "right",
+      plot.subtitle = element_text(size = 9)
+    )
+  
+  plot_list[[i]] <- p
+}
+
+# çµ±åˆ
+p_signature_umap <- wrap_plots(plot_list, ncol = 2)
+
+print(p_signature_umap)
+
+# ä¿å­˜
+ggsave(
+  file.path(output_dir, "Figure2", "Figure2B_Signature_UMAP_4panel_corrected.png"),
+  p_signature_umap, width = 16, height = 12, dpi = 300
+)
+
+cat("âœ… Figure 2B saved\n")
+```
+
+
+## Figure 2C: Signature Spatial Distribution
+
+```{r figure2c_spatial, fig.width=16, fig.height=10}
+cat("=== Figure 2C: Spatial Hotspot Map (Final) ===\n")
+
+# ä½¿ç”¨ã™ã‚‹ã‚·ã‚°ãƒãƒãƒ£
+sig_to_plot <- "T_cell_Exhaustion_1"
+
+# ç©ºé–“ãƒ‡ãƒ¼ã‚¿æº–å‚™
+spatial_data <- cosmx@meta.data %>%
+  dplyr::select(sample, condition, x_slide_mm, y_slide_mm, score = !!sym(sig_to_plot))
+
+# ä¸Šä½25%ã®ã—ãã„å€¤
+threshold <- quantile(spatial_data$score, 0.75, na.rm = TRUE)
+
+# é«˜ã‚¹ã‚³ã‚¢ç´°èƒžã®ã¿
+spatial_data_high <- spatial_data %>%
+  dplyr::filter(score > threshold)
+
+# Figure 2C æœ¬ä½“ï¼šèƒŒæ™¯ã‚°ãƒ¬ãƒ¼ + é«˜ã‚¹ã‚³ã‚¢ç´°èƒžã‚«ãƒ©ãƒ¼
+p_spatial_2C <- ggplot() +
+  # èƒŒæ™¯ï¼šå…¨ç´°èƒžï¼ˆã”ãè–„ã„ã‚°ãƒ¬ãƒ¼ï¼‰
+  geom_point(
+    data  = spatial_data,
+    aes(x = x_slide_mm, y = y_slide_mm),
+    color = "grey92",
+    size  = 0.1,
+    alpha = 0.25
+  ) +
+  # å‰æ™¯ï¼šé«˜ã‚¹ã‚³ã‚¢ç´°èƒžã®ã¿ã‚«ãƒ©ãƒ¼è¡¨ç¤º
+  geom_point(
+    data  = spatial_data_high,
+    aes(x = x_slide_mm, y = y_slide_mm, color = score),
+    size  = 0.7,
+    alpha = 0.9
+  ) +
+  facet_wrap(~ sample + condition, ncol = 4, scales = "free") +
+  scale_color_viridis(option = "magma") +
+  labs(
+    title = paste("High-score cells (Top 25%):", gsub("_1$", "", sig_to_plot)),
+    x     = "X (mm)",
+    y     = "Y (mm)",
+    color = "Score"
+  ) +
+  publication_theme +
+  theme(
+    strip.text    = element_text(size = 11, face = "bold"),
+    axis.text     = element_text(size = 9),
+    legend.position = "right"
+  )
+
+print(p_spatial_2C)
+
+ggsave(
+  file.path(output_dir, "Figure2", "Figure2C_Spatial_TcellExhaustion_hotspot.png"),
+  p_spatial_2C,
+  width  = 16,
+  height = 10,
+  dpi    = 600
+)
+
+cat("âœ… Figure 2C (final hotspot map) saved\n")
+
+```
+
+## Figure 2D: Signature Score Comparison (Violin Plots)
+
+```{r figure2d_violin, fig.width=14, fig.height=10}
+cat("=== Figure 2D: Signature Score Comparison ===\n")
+
+# å…¨Signature scoreå–å¾—
+all_sig_scores <- c(
+  "Tubular_Injury_1", "Endothelial_Activation_1", "Myeloid_Activation_1",
+  "T_cell_Activation_1", "Stromal_Activation_1", "B_Plasma_Activation_1",
+  "Inflammatory_Chemokine_1", "T_cell_Exhaustion_1", "Tissue_Damage_1",
+  "ICI_General_Top15_1", "Known_ICI_Markers_1"
+)
+
+# ãƒ‡ãƒ¼ã‚¿æ•´å½¢ï¼ˆlong formatï¼‰
+sig_data_long <- cosmx@meta.data %>%
+  select(sample, condition, all_of(all_sig_scores)) %>%
+  pivot_longer(
+    cols = all_of(all_sig_scores),
+    names_to = "Signature",
+    values_to = "Score"
+  ) %>%
+  mutate(
+    Signature = gsub("_Score.*", "", Signature)
+  )
+
+# Conditionåˆ¥å¹³å‡ã‚¹ã‚³ã‚¢è¨ˆç®—ï¼ˆé †åºä»˜ã‘ç”¨ï¼‰
+sig_order <- sig_data_long %>%
+  filter(condition == "ICI-AKI") %>%
+  group_by(Signature) %>%
+  summarise(mean_score = mean(Score, na.rm = TRUE), .groups = "drop") %>%
+  arrange(desc(mean_score)) %>%
+  pull(Signature)
+
+# Top 8 signaturesã§ãƒ—ãƒ­ãƒƒãƒˆ
+top_sigs <- sig_order[1:min(8, length(sig_order))]
+
+sig_data_top <- sig_data_long %>%
+  filter(Signature %in% top_sigs) %>%
+  mutate(Signature = factor(Signature, levels = top_sigs))
+
+p_violin <- ggplot(sig_data_top, 
+                   aes(x = condition, y = Score, fill = condition)) +
+  geom_violin(scale = "width", alpha = 0.7) +
+  geom_boxplot(width = 0.2, outlier.shape = NA, alpha = 0.5) +
+  facet_wrap(~Signature, ncol = 4, scales = "free_y") +
+  scale_fill_manual(values = condition_colors) +
+  labs(
+    title = "Signature Scores by Condition (Top 8)",
+    x = "Condition",
+    y = "Signature Score",
+    fill = "Condition"
+  ) +
+  publication_theme +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 9),
+    strip.text = element_text(size = 10)
+  )
+
+print(p_violin)
+
+# ä¿å­˜
+ggsave(
+  file.path(output_dir, "Figure2", "Figure2D_Violin_plots.pdf"),
+  p_violin, width = 14, height = 10, device = "pdf"
+)
+
+ggsave(
+  file.path(output_dir, "Figure2", "Figure2D_Violin_plots.png"),
+  p_violin, width = 14, height = 10, dpi = 600
+)
+
+cat("âœ… Figure 2D saved\n")
+```
+
+## Figure 2E: Statistical Comparison
+
+```{r figure2e_statistics, fig.width=12, fig.height=8}
+
+cat("=== Figure 2E: Statistical comparison (median difference, Top 10 by effect size) ===\n")
+
+# Wilcoxonæ¤œå®šï¼ˆICI-AKI vs non-ICIï¼‰
+stat_results <- list()
+
+for (sig in all_sig_scores) {
+
+  ici_scores <- cosmx@meta.data %>%
+    dplyr::filter(condition == "ICI-AKI") %>%
+    dplyr::pull(!!sym(sig))
+
+  non_ici_scores <- cosmx@meta.data %>%
+    dplyr::filter(condition != "ICI-AKI") %>%
+    dplyr::pull(!!sym(sig))
+
+  if (length(ici_scores) > 0 && length(non_ici_scores) > 0) {
+
+    wilcox_test <- wilcox.test(ici_scores, non_ici_scores)
+
+    ici_med    <- median(ici_scores,     na.rm = TRUE)
+    nonici_med <- median(non_ici_scores, na.rm = TRUE)
+
+    # fold changeï¼ˆè£œåŠ©æŒ‡æ¨™ï¼‰
+    fc <- if (!is.na(nonici_med) && nonici_med != 0) {
+      ici_med / nonici_med
+    } else {
+      NA_real_
+    }
+
+    stat_results[[sig]] <- data.frame(
+      Signature     = gsub("_Score.*", "", sig),
+      ICI_median    = ici_med,
+      nonICI_median = nonici_med,
+      fold_change   = fc,
+      median_diff   = ici_med - nonici_med,
+      p_value       = wilcox_test$p.value,
+      stringsAsFactors = FALSE
+    )
+  }
+}
+
+# çµ±åˆ
+stat_df <- dplyr::bind_rows(stat_results) %>%
+  dplyr::mutate(
+    p_adj = p.adjust(p_value, method = "bonferroni"),
+    significance = dplyr::case_when(
+      p_adj < 0.001 ~ "***",
+      p_adj < 0.01  ~ "**",
+      p_adj < 0.05  ~ "*",
+      TRUE          ~ "ns"
+    )
+  )
+
+cat("\n=== Statistical test results (sorted by adjusted p) ===\n")
+print(dplyr::arrange(stat_df, p_adj))
+
+# ä¿å­˜ï¼ˆç”Ÿãƒ‡ãƒ¼ã‚¿ï¼‰
+dir.create(file.path(output_dir, "Statistics"), recursive = TRUE, showWarnings = FALSE)
+write.csv(
+  stat_df,
+  file.path(output_dir, "Statistics", "Figure2E_statistical_tests.csv"),
+  row.names = FALSE
+)
+
+# ---- Figure 2E: Top10 by effect size ----
+top_stat_df <- stat_df %>%
+  dplyr::filter(median_diff != 0) %>%
+  dplyr::arrange(dplyr::desc(abs(median_diff))) %>%
+  dplyr::slice_head(n = 10) %>%
+  dplyr::mutate(
+    Signature = factor(Signature, levels = rev(Signature))
+  )
+
+p_fc <- ggplot(
+  top_stat_df,
+  aes(x = Signature, y = median_diff)
+) +
+  geom_col(fill = "#D95F02", alpha = 0.9) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "black") +
+  geom_text(
+    aes(label = significance,
+        hjust = ifelse(median_diff >= 0, -0.15, 1.15)),
+    size = 4
+  ) +
+  coord_flip() +
+  scale_y_continuous(expand = expansion(mult = c(0.05, 0.2))) +
+  labs(
+    x       = "Signature",
+    y       = "Median difference (ICI âˆ’ non-ICI)",
+    caption = "*** p<0.001, ** p<0.01, * p<0.05 (Bonferroni-adjusted)"
+  ) +
+  publication_theme +
+  theme(
+    plot.margin = margin(t = 30, r = 20, b = 20, l = 20),
+    plot.title  = element_text(hjust = 0.5, margin = margin(b = 10))
+  ) +
+  ggtitle("ICI-AKI vs non-ICI:\nDifference in median signature scores (Top 10 by effect size)")  # â† ã‚¿ã‚¤ãƒˆãƒ«åˆ‡ã‚Œé˜²æ­¢ï¼
+
+print(p_fc)
+
+# ä¿å­˜
+dir.create(file.path(output_dir, "Figure2"), recursive = TRUE, showWarnings = FALSE)
+
+ggsave(
+  file.path(output_dir, "Figure2", "Figure2E_MedianDifference_effectsize.pdf"),
+  p_fc, width = 10, height = 8
+)
+
+ggsave(
+  file.path(output_dir, "Figure2", "Figure2E_MedianDifference_effectsize.png"),
+  p_fc, width = 10, height = 8, dpi = 600
+)
+
+cat("âœ… Figure 2E å®Œäº†ï¼šmedian difference / Top10 by effect size ã‚’å‡ºåŠ›\n")
+
+```
+
+---
+
+# 4. Summary Table
+
+```{r summary_table}
+cat("=== Summary Statistics ===\n")
+
+summary_stats <- data.frame(
+  Metric = c(
+    "Total Cells",
+    "Total Genes",
+    "Samples",
+    "Conditions",
+    "Major Cell Types",
+    "Signature Scores Available"
+  ),
+  Value = c(
+    ncol(cosmx),
+    nrow(cosmx),
+    length(unique(cosmx$sample)),
+    length(unique(cosmx$condition)),
+    length(unique(cosmx$major_celltype)),
+    length(all_sig_scores)
+  )
+)
+
+print(summary_stats)
+
+# ä¿å­˜
+write.csv(
+  summary_stats,
+  file.path(output_dir, "Statistics", "Summary_statistics.csv"),
+  row.names = FALSE
+)
+
+cat("\nâœ… All figures completed!\n")
+cat("ðŸ“ Output directory:", output_dir, "\n")
+```
+
+---
+
+# Session Info
+
+```{r session_info}
+sessionInfo()
+```

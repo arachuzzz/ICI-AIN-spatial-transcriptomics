@@ -1,0 +1,1195 @@
+---
+title: "scFFPE Comprehensive DEG Analysis: ICI_AKI Signature Discovery"
+author: "Kidney ICI_AKI Research Project"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 4
+    code_folding: show
+    theme: cosmo
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  fig.width = 12,
+  fig.height = 8,
+  dpi = 300
+)
+```
+
+# ãƒ—ãƒ­ã‚¸ã‚§ã‚¯ãƒˆæ¦‚è¦
+
+**ç›®çš„**: scFFPEãƒ‡ãƒ¼ã‚¿ã‹ã‚‰ICI-AKIç‰¹ç•°çš„ãªåˆ†å­ã‚·ã‚°ãƒãƒãƒ£ã‚’ä½“ç³»çš„ã«ç™ºè¦‹ã™ã‚‹
+
+**å…¥åŠ›ãƒ‡ãƒ¼ã‚¿**: 
+- File: `scffpe_additional_analysis_complete_doublet_removed.rds`
+- Cells: Doubleté™¤åŽ»æ¸ˆã¿ã€è©³ç´°ã‚¢ãƒŽãƒ†ãƒ¼ã‚·ãƒ§ãƒ³å®Œäº†
+- Samples: S0 (Rejection), S1/S3 (ICI-AKI), S2 (Drug-AKI)
+
+**ã‚¢ãƒ—ãƒ­ãƒ¼ãƒ**: 
+1. å…¨ç´°èƒžãƒ¬ãƒ™ãƒ«ã§ã®3ç¾¤æ¯”è¼ƒDEGè§£æž
+2. ä¸»è¦ç´°èƒžã‚¿ã‚¤ãƒ—åˆ¥ã®DEGè§£æž
+3. ICI-AKIç‰¹ç•°çš„éºä¼å­ã®åŒå®šï¼ˆä¸¡æ¯”è¼ƒã§æœ‰æ„ï¼‰
+4. CosMx 1Kãƒ‘ãƒãƒ«ã¨ã®é‡è¤‡ç¢ºèª
+5. Cell-state signatureã®å®šç¾©
+
+**æœŸå¾…ã•ã‚Œã‚‹æˆæžœ**:
+- ICIç‰¹ç•°çš„DEGãƒªã‚¹ãƒˆï¼ˆå…¨ç´°èƒž + å„ç´°èƒžã‚¿ã‚¤ãƒ—ï¼‰
+- CosMxæŠ•å½±å¯èƒ½ãªã‚·ã‚°ãƒãƒãƒ£ï¼ˆ5-10éºä¼å­/stateï¼‰
+- ç´°èƒžã‚¿ã‚¤ãƒ—åˆ¥ã®ç—…æ…‹ç‰¹ç•°çš„å¤‰åŒ–ã®è§£æ˜Ž
+
+---
+
+# 1. ç’°å¢ƒæº–å‚™ {.tabset .tabset-fade}
+
+## ãƒ©ã‚¤ãƒ–ãƒ©ãƒªèª­ã¿è¾¼ã¿
+
+```{r load_libraries}
+cat("=== Loading Required Libraries ===\n")
+
+suppressPackageStartupMessages({
+  library(Seurat)
+  library(SeuratObject)
+  library(dplyr)
+  library(tidyr)
+  library(ggplot2)
+  library(patchwork)
+  library(viridis)
+  library(RColorBrewer)
+  library(pheatmap)
+  library(readxl)
+  library(ggrepel)
+})
+
+cat("âœ… All libraries loaded\n")
+cat("Seurat version:", as.character(packageVersion("Seurat")), "\n")
+cat("R version:", R.version.string, "\n\n")
+```
+
+## ãƒ‡ã‚£ãƒ¬ã‚¯ãƒˆãƒªè¨­å®š
+
+```{r setup_directories}
+cat("=== Setting up Directories ===\n")
+
+# Project root
+project_root <- "/Users/HiroyukiArai/Documents/å¤§å­¦é™¢/ç ”ç©¶çµæžœ/2024æ‘ä¸Šå…ˆç”ŸCosMX/202406 single cell FFPE data/scFFPE_kidney_analysis"
+
+# Data directory
+data_dir <- file.path(project_root, "results")
+
+# Output directory
+output_dir <- file.path(project_root, "results/DEG_analysis")
+dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+
+# CosMx panel file
+cosmx_panel_file <- "/Users/HiroyukiArai/Documents/å¤§å­¦é™¢/ç ”ç©¶çµæžœ/2024æ‘ä¸Šå…ˆç”ŸCosMX/CosMxâ„¢ Human Universal Cell Characterization Panel Gene Target List.xlsx"
+
+cat("Data directory:", data_dir, "\n")
+cat("Output directory:", output_dir, "\n")
+cat("CosMx panel file:", cosmx_panel_file, "\n\n")
+```
+
+## ãƒ‡ãƒ¼ã‚¿èª­ã¿è¾¼ã¿
+
+```{r load_data}
+cat("=== Loading scFFPE Data ===\n")
+
+# Load scFFPE object
+scffpe_file <- file.path(data_dir, "scffpe_additional_analysis_complete_doublet_removed.rds")
+
+if(!file.exists(scffpe_file)) {
+  stop("âŒ Data file not found: ", scffpe_file)
+}
+
+cat("Loading data...\n")
+scffpe <- readRDS(scffpe_file)
+
+cat("âœ… Data loaded successfully\n")
+cat("Total cells:", ncol(scffpe), "\n")
+cat("Total genes:", nrow(scffpe), "\n")
+cat("Samples:", paste(unique(scffpe$orig.ident), collapse = ", "), "\n")
+cat("Assays:", names(scffpe@assays), "\n\n")
+
+# Check metadata
+cat("Available metadata columns:\n")
+print(colnames(scffpe@meta.data))
+cat("\n")
+```
+
+## Groupå®šç¾©
+
+```{r define_groups}
+cat("=== Defining Sample Groups ===\n")
+
+# Check current sample info
+cat("Current sample distribution:\n")
+print(table(scffpe$orig.ident))
+
+# Create group column based on sample
+# First check what column contains sample info
+if("sample" %in% colnames(scffpe@meta.data)) {
+  sample_col <- "sample"
+} else if("orig.ident" %in% colnames(scffpe@meta.data)) {
+  sample_col <- "orig.ident"
+} else {
+  stop("Cannot find sample information column")
+}
+
+# Check actual sample names
+cat("\nActual sample names in data:\n")
+print(unique(scffpe@meta.data[[sample_col]]))
+
+# Create group based on actual sample names (with _scFFPE suffix)
+scffpe$group <- case_when(
+  scffpe@meta.data[[sample_col]] == "S0_scFFPE" ~ "Rejection",
+  scffpe@meta.data[[sample_col]] %in% c("S1_scFFPE", "S3_scFFPE") ~ "ICI_AKI",
+  scffpe@meta.data[[sample_col]] == "S2_scFFPE" ~ "Drug_AKI",
+  TRUE ~ "Unknown"
+)
+
+# Verify grouping
+cat("\nâœ… Group assignment complete:\n")
+print(table(scffpe$group))
+
+cat("\nFinal group distribution:\n")
+print(table(scffpe$group))
+cat("\n")
+```
+
+## CosMxãƒ‘ãƒãƒ«èª­ã¿è¾¼ã¿
+
+```{r load_cosmx_panel}
+cat("=== Loading CosMx Gene Panel ===\n")
+
+if(!file.exists(cosmx_panel_file)) {
+  cat("âš ï¸  CosMx panel file not found, will skip overlap analysis\n")
+  cosmx_genes <- NULL
+} else {
+  # Read gene list from Annotations sheet
+  cosmx_panel_df <- read_excel(cosmx_panel_file, sheet = "Annotations", skip = 1)
+  
+  # Extract gene names
+  cosmx_genes <- cosmx_panel_df[[1]]
+  cosmx_genes <- cosmx_genes[!is.na(cosmx_genes)]
+  cosmx_genes <- cosmx_genes[cosmx_genes != "Gene"]
+  
+  cat("âœ… CosMx panel genes loaded\n")
+  cat("Total panel genes:", length(cosmx_genes), "\n")
+  
+  # Check overlap with scFFPE data
+  genes_in_scffpe <- intersect(cosmx_genes, rownames(scffpe))
+  cat("Genes available in scFFPE:", length(genes_in_scffpe), 
+      sprintf("(%.1f%%)\n\n", length(genes_in_scffpe)/length(cosmx_genes)*100))
+}
+```
+
+---
+
+# 2. å…¨ç´°èƒžãƒ¬ãƒ™ãƒ«DEGè§£æž {.tabset .tabset-fade}
+
+## ICI-AKI vs Rejection
+
+```{r deg_ici_vs_rejection}
+cat("=== DEG Analysis: ICI-AKI vs Rejection (All Cells) ===\n")
+
+# Set identity
+Idents(scffpe) <- "group"
+
+# FindMarkers
+cat("Running FindMarkers (this may take several minutes)...\n")
+deg_ici_vs_rej <- FindMarkers(
+  scffpe,
+  ident.1 = "ICI_AKI",
+  ident.2 = "Rejection",
+  logfc.threshold = 0.25,
+  min.pct = 0.1,
+  test.use = "wilcox"
+)
+
+# Add gene names as column
+deg_ici_vs_rej$gene <- rownames(deg_ici_vs_rej)
+
+# Filter significant genes
+deg_ici_vs_rej_sig <- deg_ici_vs_rej %>%
+  filter(p_val_adj < 0.05) %>%
+  mutate(
+    direction = ifelse(avg_log2FC > 0, "ICI_high", "Rejection_high"),
+    abs_log2FC = abs(avg_log2FC)
+  ) %>%
+  arrange(desc(abs_log2FC))
+
+cat("âœ… DEG analysis complete\n")
+cat("Total genes tested:", nrow(deg_ici_vs_rej), "\n")
+cat("Significant genes (padj < 0.05):", nrow(deg_ici_vs_rej_sig), "\n")
+cat("  - ICI_AKI high:", sum(deg_ici_vs_rej_sig$direction == "ICI_high"), "\n")
+cat("  - Rejection high:", sum(deg_ici_vs_rej_sig$direction == "Rejection_high"), "\n\n")
+
+# Save results
+write.csv(deg_ici_vs_rej_sig, 
+          file.path(output_dir, "DEG_ICI_vs_Rejection_all_cells.csv"),
+          row.names = FALSE)
+
+# Show top genes
+cat("Top 20 ICI_high genes:\n")
+print(head(deg_ici_vs_rej_sig %>% filter(direction == "ICI_high"), 20))
+
+cat("\nTop 20 Rejection_high genes:\n")
+print(head(deg_ici_vs_rej_sig %>% filter(direction == "Rejection_high"), 20))
+```
+
+## ICI-AKI vs Drug-AKI
+
+```{r deg_ici_vs_drug}
+cat("=== DEG Analysis: ICI-AKI vs Drug-AKI (All Cells) ===\n")
+
+# FindMarkers
+cat("Running FindMarkers (this may take several minutes)...\n")
+deg_ici_vs_drug <- FindMarkers(
+  scffpe,
+  ident.1 = "ICI_AKI",
+  ident.2 = "Drug_AKI",
+  logfc.threshold = 0.25,
+  min.pct = 0.1,
+  test.use = "wilcox"
+)
+
+# Add gene names
+deg_ici_vs_drug$gene <- rownames(deg_ici_vs_drug)
+
+# Filter significant genes
+deg_ici_vs_drug_sig <- deg_ici_vs_drug %>%
+  filter(p_val_adj < 0.05) %>%
+  mutate(
+    direction = ifelse(avg_log2FC > 0, "ICI_high", "Drug_high"),
+    abs_log2FC = abs(avg_log2FC)
+  ) %>%
+  arrange(desc(abs_log2FC))
+
+cat("âœ… DEG analysis complete\n")
+cat("Total genes tested:", nrow(deg_ici_vs_drug), "\n")
+cat("Significant genes (padj < 0.05):", nrow(deg_ici_vs_drug_sig), "\n")
+cat("  - ICI_AKI high:", sum(deg_ici_vs_drug_sig$direction == "ICI_high"), "\n")
+cat("  - Drug-AKI high:", sum(deg_ici_vs_drug_sig$direction == "Drug_high"), "\n\n")
+
+# Save results
+write.csv(deg_ici_vs_drug_sig, 
+          file.path(output_dir, "DEG_ICI_vs_Drug_all_cells.csv"),
+          row.names = FALSE)
+
+# Show top genes
+cat("Top 20 ICI_high genes:\n")
+print(head(deg_ici_vs_drug_sig %>% filter(direction == "ICI_high"), 20))
+
+cat("\nTop 20 Drug_high genes:\n")
+print(head(deg_ici_vs_drug_sig %>% filter(direction == "Drug_high"), 20))
+```
+
+## ICIç‰¹ç•°çš„éºä¼å­
+
+```{r ici_specific_genes}
+cat("=== Identifying ICI-Specific Genes (Both Comparisons) ===\n")
+
+# Extract ICI_high genes from both comparisons
+ici_high_vs_rej <- deg_ici_vs_rej_sig %>% 
+  filter(direction == "ICI_high") %>%
+  select(gene, log2FC_vs_Rej = avg_log2FC, padj_vs_Rej = p_val_adj)
+
+ici_high_vs_drug <- deg_ici_vs_drug_sig %>% 
+  filter(direction == "ICI_high") %>%
+  select(gene, log2FC_vs_Drug = avg_log2FC, padj_vs_Drug = p_val_adj)
+
+# Inner join (both comparisons)
+ici_specific <- inner_join(ici_high_vs_rej, ici_high_vs_drug, by = "gene") %>%
+  mutate(
+    mean_log2FC = (log2FC_vs_Rej + log2FC_vs_Drug) / 2,
+    max_padj = pmax(padj_vs_Rej, padj_vs_Drug)
+  ) %>%
+  arrange(desc(mean_log2FC))
+
+cat("âœ… ICI-specific gene identification complete\n")
+cat("Genes high in ICI_AKI vs Rejection:", nrow(ici_high_vs_rej), "\n")
+cat("Genes high in ICI_AKI vs Drug-AKI:", nrow(ici_high_vs_drug), "\n")
+cat("ICI-specific genes (both comparisons):", nrow(ici_specific), "\n\n")
+
+# Save results
+write.csv(ici_specific, 
+          file.path(output_dir, "ICI_specific_genes_all_cells.csv"),
+          row.names = FALSE)
+
+# Show top ICI-specific genes
+cat("Top 50 ICI-specific genes:\n")
+print(head(ici_specific, 50))
+```
+
+## Volcano Plots
+
+```{r volcano_plots, fig.width=14, fig.height=6}
+cat("=== Creating Volcano Plots ===\n")
+
+# Prepare data for volcano plots
+deg_ici_vs_rej_volcano <- deg_ici_vs_rej %>%
+  mutate(
+    significance = case_when(
+      p_val_adj < 0.05 & avg_log2FC > 0.5 ~ "ICI_high",
+      p_val_adj < 0.05 & avg_log2FC < -0.5 ~ "Rejection_high",
+      TRUE ~ "NS"
+    )
+  )
+
+deg_ici_vs_drug_volcano <- deg_ici_vs_drug %>%
+  mutate(
+    significance = case_when(
+      p_val_adj < 0.05 & avg_log2FC > 0.5 ~ "ICI_high",
+      p_val_adj < 0.05 & avg_log2FC < -0.5 ~ "Drug_high",
+      TRUE ~ "NS"
+    )
+  )
+
+# Top genes to label
+top_genes_rej <- deg_ici_vs_rej_volcano %>%
+  filter(significance != "NS") %>%
+  arrange(desc(abs(avg_log2FC))) %>%
+  head(10) %>%
+  pull(gene)
+
+top_genes_drug <- deg_ici_vs_drug_volcano %>%
+  filter(significance != "NS") %>%
+  arrange(desc(abs(avg_log2FC))) %>%
+  head(10) %>%
+  pull(gene)
+
+# Plot 1: ICI vs Rejection
+p1 <- ggplot(deg_ici_vs_rej_volcano, 
+             aes(x = avg_log2FC, y = -log10(p_val_adj), color = significance)) +
+  geom_point(alpha = 0.6, size = 1.5) +
+  geom_text_repel(
+    data = deg_ici_vs_rej_volcano %>% filter(gene %in% top_genes_rej),
+    aes(label = gene),
+    size = 3,
+    max.overlaps = 20
+  ) +
+  scale_color_manual(values = c("ICI_high" = "#E64B35", 
+                                  "Rejection_high" = "#4DBBD5", 
+                                  "NS" = "grey70")) +
+  geom_vline(xintercept = c(-0.5, 0.5), linetype = "dashed", color = "grey40") +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "grey40") +
+  labs(title = "DEG: ICI_AKI vs Rejection (All Cells)",
+       x = "log2 Fold Change",
+       y = "-log10(adjusted p-value)",
+       color = "Significance") +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "bottom")
+
+print(p1)
+
+ggsave(file.path(output_dir, "Volcano_ICI_vs_Rejection_all_cells.png"),
+       p1, width = 10, height = 8, dpi = 300)
+
+# Plot 2: ICI vs Drug
+p2 <- ggplot(deg_ici_vs_drug_volcano, 
+             aes(x = avg_log2FC, y = -log10(p_val_adj), color = significance)) +
+  geom_point(alpha = 0.6, size = 1.5) +
+  geom_text_repel(
+    data = deg_ici_vs_drug_volcano %>% filter(gene %in% top_genes_drug),
+    aes(label = gene),
+    size = 3,
+    max.overlaps = 20
+  ) +
+  scale_color_manual(values = c("ICI_high" = "#E64B35", 
+                                  "Drug_high" = "#00A087", 
+                                  "NS" = "grey70")) +
+  geom_vline(xintercept = c(-0.5, 0.5), linetype = "dashed", color = "grey40") +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "grey40") +
+  labs(title = "DEG: ICI_AKI vs Drug-AKI (All Cells)",
+       x = "log2 Fold Change",
+       y = "-log10(adjusted p-value)",
+       color = "Significance") +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "bottom")
+
+print(p2)
+
+ggsave(file.path(output_dir, "Volcano_ICI_vs_Drug_all_cells.png"),
+       p2, width = 10, height = 8, dpi = 300)
+
+cat("âœ… Volcano plots saved\n\n")
+```
+
+---
+
+# 3. ç´°èƒžã‚¿ã‚¤ãƒ—åˆ¥DEGè§£æž {.tabset .tabset-fade}
+
+## ç´°èƒžã‚¿ã‚¤ãƒ—ç¢ºèª
+
+```{r check_celltypes}
+cat("=== Checking Available Cell Types ===\n")
+
+# Check if major_celltype exists
+if("major_celltype" %in% colnames(scffpe@meta.data)) {
+  cat("âœ… major_celltype column found\n")
+  celltype_col <- "major_celltype"
+} else if("detailed_celltype" %in% colnames(scffpe@meta.data)) {
+  cat("âš ï¸  Using detailed_celltype instead\n")
+  celltype_col <- "detailed_celltype"
+} else {
+  stop("âŒ No cell type annotation found in metadata")
+}
+
+# Cell type distribution
+cat("\nCell type distribution:\n")
+celltype_table <- table(scffpe@meta.data[[celltype_col]])
+print(sort(celltype_table, decreasing = TRUE))
+
+# Cell type by group
+cat("\nCell type distribution by group:\n")
+celltype_group_table <- table(scffpe@meta.data[[celltype_col]], scffpe$group)
+print(celltype_group_table)
+
+# Select cell types with sufficient cells (>50 per group minimum)
+sufficient_celltypes <- names(celltype_table)[celltype_table >= 100]
+
+cat("\nâœ… Cell types with sufficient cells (â‰¥100):", length(sufficient_celltypes), "\n")
+print(sufficient_celltypes)
+cat("\n")
+```
+
+## ç´°èƒžã‚¿ã‚¤ãƒ—åˆ¥DEGå®Ÿè¡Œ
+
+```{r celltype_deg_analysis}
+cat("=== Cell Type-Specific DEG Analysis ===\n")
+
+# Initialize results storage
+celltype_deg_results <- list()
+
+# Loop through each cell type
+for(ct in sufficient_celltypes) {
+  
+  cat("\n", strrep("=", 70), "\n")
+  cat("Analyzing:", ct, "\n")
+  cat(strrep("=", 70), "\n")
+  
+# Subset cells (correct method for Seurat v5)
+cells_subset <- subset(scffpe, subset = !!sym(celltype_col) == ct)
+  
+  # Check cell counts per group
+  group_counts <- table(cells_subset$group)
+  cat("Cell counts per group:\n")
+  print(group_counts)
+  
+  # Skip if insufficient cells in any group
+  if(any(group_counts < 10)) {
+    cat("âš ï¸  Skipped: insufficient cells in one or more groups\n")
+    next
+  }
+  
+  # Set identity
+  Idents(cells_subset) <- "group"
+  
+  # === ICI vs Rejection ===
+  cat("\nRunning: ICI_AKI vs Rejection...\n")
+  
+  tryCatch({
+    deg_ct_rej <- FindMarkers(
+      cells_subset,
+      ident.1 = "ICI_AKI",
+      ident.2 = "Rejection",
+      logfc.threshold = 0.25,
+      min.pct = 0.1,
+      test.use = "wilcox"
+    )
+    
+    deg_ct_rej$gene <- rownames(deg_ct_rej)
+    deg_ct_rej$celltype <- ct
+    deg_ct_rej$comparison <- "ICI_vs_Rejection"
+    
+    deg_ct_rej_sig <- deg_ct_rej %>%
+      filter(p_val_adj < 0.05) %>%
+      mutate(direction = ifelse(avg_log2FC > 0, "ICI_high", "Rejection_high"))
+    
+    cat("  Significant DEGs:", nrow(deg_ct_rej_sig), "\n")
+    
+  }, error = function(e) {
+    cat("  âŒ Error:", e$message, "\n")
+    deg_ct_rej_sig <- NULL
+  })
+  
+  # === ICI vs Drug ===
+  cat("Running: ICI_AKI vs Drug-AKI...\n")
+  
+  tryCatch({
+    deg_ct_drug <- FindMarkers(
+      cells_subset,
+      ident.1 = "ICI_AKI",
+      ident.2 = "Drug_AKI",
+      logfc.threshold = 0.25,
+      min.pct = 0.1,
+      test.use = "wilcox"
+    )
+    
+    deg_ct_drug$gene <- rownames(deg_ct_drug)
+    deg_ct_drug$celltype <- ct
+    deg_ct_drug$comparison <- "ICI_vs_Drug"
+    
+    deg_ct_drug_sig <- deg_ct_drug %>%
+      filter(p_val_adj < 0.05) %>%
+      mutate(direction = ifelse(avg_log2FC > 0, "ICI_high", "Drug_high"))
+    
+    cat("  Significant DEGs:", nrow(deg_ct_drug_sig), "\n")
+    
+  }, error = function(e) {
+    cat("  âŒ Error:", e$message, "\n")
+    deg_ct_drug_sig <- NULL
+  })
+  
+  # Store results
+  if(!is.null(deg_ct_rej_sig) || !is.null(deg_ct_drug_sig)) {
+    celltype_deg_results[[ct]] <- list(
+      vs_Rejection = deg_ct_rej_sig,
+      vs_Drug = deg_ct_drug_sig
+    )
+  }
+}
+
+cat("\n", strrep("=", 70), "\n")
+cat("âœ… Cell type-specific DEG analysis complete\n")
+cat("Analyzed cell types:", length(celltype_deg_results), "\n")
+cat(strrep("=", 70), "\n\n")
+
+# Save results
+saveRDS(celltype_deg_results, 
+        file.path(output_dir, "celltype_specific_DEG_results.rds"))
+```
+
+## çµ±åˆçµæžœã¾ã¨ã‚
+
+```{r celltype_deg_summary}
+cat("=== Summarizing Cell Type-Specific DEGs ===\n")
+
+if(length(celltype_deg_results) == 0) {
+  cat("âš ï¸  No cell type-specific results available\n")
+} else {
+  
+  # Combine all results
+  all_celltype_deg <- bind_rows(
+    lapply(names(celltype_deg_results), function(ct) {
+      bind_rows(
+        celltype_deg_results[[ct]]$vs_Rejection,
+        celltype_deg_results[[ct]]$vs_Drug
+      )
+    })
+  )
+  
+  cat("âœ… Combined results\n")
+  cat("Total cell type Ã— gene Ã— comparison combinations:", nrow(all_celltype_deg), "\n\n")
+  
+  # Save combined results
+  write.csv(all_celltype_deg, 
+            file.path(output_dir, "All_celltype_specific_DEGs.csv"),
+            row.names = FALSE)
+  
+  # Summary by cell type
+  cat("Summary by cell type:\n")
+  summary_by_ct <- all_celltype_deg %>%
+    group_by(celltype, comparison) %>%
+    summarize(
+      n_genes = n(),
+      n_ici_high = sum(direction %in% c("ICI_high")),
+      n_other_high = sum(!direction %in% c("ICI_high")),
+      .groups = "drop"
+    )
+  print(summary_by_ct)
+  
+  # Top DEGs per cell type
+  cat("\n\nTop 5 DEGs per cell type (ICI_high):\n")
+  top_degs_per_ct <- all_celltype_deg %>%
+    filter(direction == "ICI_high") %>%
+    group_by(celltype, comparison) %>%
+    arrange(desc(abs(avg_log2FC))) %>%
+    slice_head(n = 5) %>%
+    select(celltype, comparison, gene, avg_log2FC, p_val_adj)
+  
+  print(as.data.frame(top_degs_per_ct))
+}
+
+cat("\n")
+```
+
+## DEG Heatmap
+
+```{r celltype_deg_heatmap, fig.width=12, fig.height=10}
+if(length(celltype_deg_results) > 0 && nrow(all_celltype_deg) > 0) {
+  
+  cat("=== Creating Cell Type DEG Heatmap ===\n")
+  
+  # Select top genes per cell type
+  top_genes_per_ct <- all_celltype_deg %>%
+    filter(direction == "ICI_high") %>%
+    group_by(celltype) %>%
+    arrange(desc(abs(avg_log2FC))) %>%
+    slice_head(n = 10) %>%
+    pull(gene) %>%
+    unique()
+  
+  cat("Selected genes for heatmap:", length(top_genes_per_ct), "\n")
+  
+  if(length(top_genes_per_ct) > 0) {
+    
+    # Create matrix for heatmap
+heatmap_data <- all_celltype_deg %>%
+  filter(gene %in% top_genes_per_ct, comparison == "ICI_vs_Rejection") %>%
+  select(celltype, gene, avg_log2FC) %>%
+  pivot_wider(names_from = celltype, values_from = avg_log2FC, values_fill = 0)
+
+    # Convert to data frame with rownames
+    heatmap_matrix <- as.data.frame(heatmap_data)
+    rownames(heatmap_matrix) <- heatmap_matrix$gene
+    heatmap_matrix$gene <- NULL
+    
+    # Plot heatmap
+    pheatmap(
+      as.matrix(heatmap_matrix),
+      cluster_rows = TRUE,
+      cluster_cols = TRUE,
+      color = colorRampPalette(c("blue", "white", "red"))(100),
+      breaks = seq(-2, 2, length.out = 101),
+      main = "Top DEGs per Cell Type (ICI_AKI vs Rejection)",
+      fontsize = 8,
+      fontsize_row = 7,
+      fontsize_col = 9,
+      filename = file.path(output_dir, "Celltype_DEG_heatmap.pdf"),
+      width = 12,
+      height = 10
+    )
+    
+    cat("âœ… Heatmap saved\n")
+  }
+}
+
+cat("\n")
+```
+
+---
+
+# 4. CosMx 1Kãƒ‘ãƒãƒ«é‡è¤‡ç¢ºèª {.tabset .tabset-fade}
+
+## å…¨ç´°èƒžDEGé‡è¤‡
+
+```{r cosmx_overlap_all_cells}
+cat("=== CosMx Panel Overlap: All Cells ===\n")
+
+if(is.null(cosmx_genes)) {
+  cat("âš ï¸  CosMx panel not loaded, skipping overlap analysis\n")
+} else {
+  
+  # === ICI-specific genes overlap ===
+  cat("ICI-specific genes (both comparisons):\n")
+  
+  ici_specific_cosmx <- ici_specific %>%
+    mutate(in_CosMx = gene %in% cosmx_genes) %>%
+    arrange(desc(mean_log2FC))
+  
+  cat("Total ICI-specific genes:", nrow(ici_specific_cosmx), "\n")
+  cat("Available in CosMx panel:", sum(ici_specific_cosmx$in_CosMx), 
+      sprintf("(%.1f%%)\n\n", sum(ici_specific_cosmx$in_CosMx)/nrow(ici_specific_cosmx)*100))
+  
+  # Save overlap results
+  write.csv(ici_specific_cosmx, 
+            file.path(output_dir, "ICI_specific_genes_CosMx_overlap.csv"),
+            row.names = FALSE)
+  
+  # Show top genes available in CosMx
+  cat("Top 30 ICI-specific genes available in CosMx:\n")
+  top_cosmx <- ici_specific_cosmx %>%
+    filter(in_CosMx == TRUE) %>%
+    head(30)
+  print(top_cosmx)
+  
+  # === Summary by FC ranges ===
+  cat("\n\nCosMx overlap by fold change range:\n")
+  fc_ranges <- ici_specific_cosmx %>%
+    mutate(
+      FC_range = cut(mean_log2FC, 
+                     breaks = c(0, 0.5, 1.0, 1.5, 2.0, Inf),
+                     labels = c("0-0.5", "0.5-1.0", "1.0-1.5", "1.5-2.0", ">2.0"))
+    ) %>%
+    group_by(FC_range) %>%
+    summarize(
+      total = n(),
+      in_CosMx = sum(in_CosMx),
+      pct_in_CosMx = round(sum(in_CosMx)/n()*100, 1)
+    )
+  print(fc_ranges)
+}
+
+cat("\n")
+```
+
+## ç´°èƒžã‚¿ã‚¤ãƒ—åˆ¥é‡è¤‡
+
+```{r cosmx_overlap_celltype}
+cat("=== CosMx Panel Overlap: Cell Type-Specific ===\n")
+
+if(is.null(cosmx_genes) || length(celltype_deg_results) == 0) {
+  cat("âš ï¸  CosMx panel or cell type results not available\n")
+} else {
+  
+  # Initialize overlap storage
+  celltype_cosmx_overlap <- list()
+  
+  # Loop through cell types
+  for(ct in names(celltype_deg_results)) {
+    
+    cat("\n", ct, ":\n")
+    
+    # vs Rejection
+    if(!is.null(celltype_deg_results[[ct]]$vs_Rejection)) {
+      rej_genes <- celltype_deg_results[[ct]]$vs_Rejection %>%
+        filter(direction == "ICI_high") %>%
+        pull(gene)
+      rej_cosmx <- intersect(rej_genes, cosmx_genes)
+      
+      cat("  vs Rejection: ", length(rej_cosmx), "/", length(rej_genes), 
+          sprintf(" (%.1f%%) in CosMx\n", length(rej_cosmx)/length(rej_genes)*100))
+      
+      celltype_cosmx_overlap[[ct]]$vs_Rejection_CosMx <- rej_cosmx
+    }
+    
+    # vs Drug
+    if(!is.null(celltype_deg_results[[ct]]$vs_Drug)) {
+      drug_genes <- celltype_deg_results[[ct]]$vs_Drug %>%
+        filter(direction == "ICI_high") %>%
+        pull(gene)
+      drug_cosmx <- intersect(drug_genes, cosmx_genes)
+      
+      cat("  vs Drug-AKI: ", length(drug_cosmx), "/", length(drug_genes), 
+          sprintf(" (%.1f%%) in CosMx\n", length(drug_cosmx)/length(drug_genes)*100))
+      
+      celltype_cosmx_overlap[[ct]]$vs_Drug_CosMx <- drug_cosmx
+    }
+  }
+  
+  # Save overlap results
+  saveRDS(celltype_cosmx_overlap, 
+          file.path(output_dir, "celltype_DEG_CosMx_overlap.rds"))
+  
+  # Summary table
+  cat("\n\n=== Summary Table ===\n")
+  
+  overlap_summary <- data.frame(
+    Cell_Type = names(celltype_cosmx_overlap),
+    vs_Rejection_CosMx = sapply(celltype_cosmx_overlap, function(x) length(x$vs_Rejection_CosMx)),
+    vs_Drug_CosMx = sapply(celltype_cosmx_overlap, function(x) length(x$vs_Drug_CosMx))
+  )
+  
+  print(overlap_summary)
+  
+  write.csv(overlap_summary, 
+            file.path(output_dir, "celltype_CosMx_overlap_summary.csv"),
+            row.names = FALSE)
+  
+  cat("\nâœ… Cell type-specific CosMx overlap analysis complete\n")
+}
+
+cat("\n")
+```
+
+## Signatureå€™è£œä½œæˆ
+
+```{r signature_candidates}
+# ========================================
+# Signature Candidates Creation (IMPROVED)
+# ========================================
+
+cat("=== Creating Signature Candidates for CosMx Projection ===\n")
+
+if(is.null(cosmx_genes) || length(celltype_deg_results) == 0) {
+  cat("âš ï¸  Required data not available\n")
+} else {
+  
+  # ========================================
+  # Strategy 1: Cell Type-Specific Signatures
+  # ========================================
+  
+  cat("\n--- Strategy 1: Cell Type-Specific Signatures ---\n")
+  
+  signature_definitions <- list()
+  
+  # Function: Extract top CosMx-available genes per cell type
+  extract_celltype_signature <- function(celltype_name, comparison, n_genes = 10) {
+    if(!celltype_name %in% names(celltype_deg_results)) return(character(0))
+    
+    if(comparison == "vs_Rejection") {
+      degs <- celltype_deg_results[[celltype_name]]$vs_Rejection
+    } else {
+      degs <- celltype_deg_results[[celltype_name]]$vs_Drug
+    }
+    
+    if(is.null(degs) || nrow(degs) == 0) return(character(0))
+    
+    # Filter ICI-high + CosMx available
+    sig_genes <- degs %>%
+      filter(direction == "ICI_high") %>%
+      filter(gene %in% cosmx_genes) %>%
+      arrange(desc(abs(avg_log2FC))) %>%
+      head(n_genes) %>%
+      pull(gene)
+    
+    return(sig_genes)
+  }
+  
+  # Tubular Injury Signature
+  signature_definitions$Tubular_Injury <- extract_celltype_signature(
+    "Tubular_cells", "vs_Rejection", 10
+  )
+  
+  # Endothelial Activation Signature
+  signature_definitions$Endothelial_Activation <- extract_celltype_signature(
+    "Endothelial_cells", "vs_Rejection", 10
+  )
+  
+  # Myeloid Activation Signature
+  signature_definitions$Myeloid_Activation <- extract_celltype_signature(
+    "Myeloid_cells", "vs_Rejection", 10
+  )
+  
+  # T cell Activation Signature
+  signature_definitions$T_cell_Activation <- extract_celltype_signature(
+    "T_NK_cells", "vs_Rejection", 10
+  )
+  
+  # Stromal Activation Signature
+  signature_definitions$Stromal_Activation <- extract_celltype_signature(
+    "Stromal_cells", "vs_Rejection", 10
+  )
+  
+  # B/Plasma cell Signature
+  signature_definitions$B_Plasma_Activation <- extract_celltype_signature(
+    "B_Plasma_cells", "vs_Rejection", 8
+  )
+  
+  # ========================================
+  # Strategy 2: Pathway-Based Signatures (Manual Curation)
+  # ========================================
+  
+  cat("\n--- Strategy 2: Pathway-Based Signatures (Manual) ---\n")
+  
+  # IFN-response (manual curation from known genes)
+  ifn_candidates <- c("IFIT1", "IFIT2", "IFIT3", "ISG15", "ISG20", 
+                      "MX1", "MX2", "OAS1", "OAS2", "OAS3",
+                      "STAT1", "STAT2", "IRF1", "IRF7", "IRF9",
+                      "IFI6", "IFI44", "IFI44L", "IFITM1", "IFITM3",
+                      "GBP1", "GBP2", "GBP4", "GBP5", "CXCL10", "CXCL9")
+  
+  ifn_available <- intersect(ifn_candidates, 
+                              ici_specific_cosmx %>% 
+                                filter(in_CosMx == TRUE) %>% 
+                                pull(gene))
+  
+  if(length(ifn_available) > 0) {
+    signature_definitions$IFN_Response <- ifn_available
+  }
+  
+  # Inflammatory/Chemokine Signature
+  chemokine_candidates <- c("CCL2", "CCL3", "CCL4", "CCL5", "CCL7", "CCL8",
+                            "CCL20", "CXCL1", "CXCL2", "CXCL3", "CXCL8",
+                            "CXCL9", "CXCL10", "CXCL11", "CXCL12", "CXCL13", "CXCL14",
+                            "IL1B", "IL6", "IL8", "IL17RB", "TNF")
+  
+  chemokine_available <- intersect(chemokine_candidates,
+                                   ici_specific_cosmx %>% 
+                                     filter(in_CosMx == TRUE) %>% 
+                                     pull(gene))
+  
+  if(length(chemokine_available) >= 3) {
+    signature_definitions$Inflammatory_Chemokine <- chemokine_available
+  }
+  
+  # Exhaustion Signature (T cell specific)
+  exhaustion_candidates <- c("PDCD1", "CTLA4", "LAG3", "TIGIT", "HAVCR2",
+                             "TOX", "TOX2", "ENTPD1", "LAYN", "CD38",
+                             "CXCL13", "IFNG", "GZMB", "PRF1")
+  
+  exhaustion_available <- intersect(exhaustion_candidates,
+                                    cosmx_genes)  # Check in full CosMx panel
+  
+  # Extract from T cell DEGs specifically
+  if("T_NK_cells" %in% names(celltype_deg_results)) {
+    t_degs <- celltype_deg_results$T_NK_cells$vs_Rejection
+    if(!is.null(t_degs)) {
+      exhaustion_t <- t_degs %>%
+        filter(gene %in% exhaustion_available) %>%
+        filter(p_val_adj < 0.05) %>%
+        pull(gene) %>%
+        unique()
+      
+      if(length(exhaustion_t) > 0) {
+        signature_definitions$T_cell_Exhaustion <- exhaustion_t
+      }
+    }
+  }
+  
+  # Tissue Damage/Stress Signature
+  damage_candidates <- c("HAVCR1", "KIM1", "VCAM1", "ICAM1", "LCN2", "NGAL",
+                         "CXCL14", "SPP1", "VEGFA", "MT1X", "MT2A",
+                         "FOS", "JUN", "EGR1", "ATF3", "DDIT3")
+  
+  damage_available <- intersect(damage_candidates,
+                                ici_specific_cosmx %>% 
+                                  filter(in_CosMx == TRUE) %>% 
+                                  pull(gene))
+  
+  if(length(damage_available) >= 3) {
+    signature_definitions$Tissue_Damage <- damage_available
+  }
+  
+  # ========================================
+  # Strategy 3: Top ICI-specific (General)
+  # ========================================
+  
+  cat("\n--- Strategy 3: General ICI Signature ---\n")
+  
+  if(exists("ici_specific_cosmx")) {
+    ici_cosmx_genes <- ici_specific_cosmx %>%
+      filter(in_CosMx == TRUE) %>%
+      arrange(desc(mean_log2FC))
+    
+    # Top 15 for robust signature
+    signature_definitions$ICI_General_Top15 <- head(ici_cosmx_genes, 15)$gene
+    
+    # Known markers (if available)
+    known_markers <- c("SPP1", "SOD2", "SERPINA1", "GPX3", "VEGFA", 
+                       "CXCL14", "AZGP1", "G0S2", "MT1X", "AQP3")
+    known_available <- intersect(known_markers, ici_cosmx_genes$gene)
+    
+    if(length(known_available) >= 5) {
+      signature_definitions$Known_ICI_Markers <- known_available
+    }
+  }
+  
+  # ========================================
+  # Print and Save Results
+  # ========================================
+  
+  cat("\n=== Signature Summary ===\n")
+  for(sig_name in names(signature_definitions)) {
+    genes <- signature_definitions[[sig_name]]
+    if(length(genes) > 0) {
+      cat("\n", sig_name, "(", length(genes), "genes):\n")
+      cat("  ", paste(genes, collapse = ", "), "\n")
+    }
+  }
+  
+  # Save signatures
+  saveRDS(signature_definitions, 
+          file.path(output_dir, "ICI_signature_candidates_for_CosMx.rds"))
+  
+  # Save as CSV with metadata
+  sig_df_list <- list()
+  for(sig_name in names(signature_definitions)) {
+    genes <- signature_definitions[[sig_name]]
+    if(length(genes) > 0) {
+      # Get fold changes if available
+      gene_info <- ici_specific_cosmx %>%
+        filter(gene %in% genes) %>%
+        select(gene, mean_log2FC, log2FC_vs_Rej, log2FC_vs_Drug)
+      
+      if(nrow(gene_info) > 0) {
+        gene_info$Signature <- sig_name
+        sig_df_list[[sig_name]] <- gene_info
+      } else {
+        # Genes not in ICI-specific list
+        sig_df_list[[sig_name]] <- data.frame(
+          gene = genes,
+          mean_log2FC = NA,
+          log2FC_vs_Rej = NA,
+          log2FC_vs_Drug = NA,
+          Signature = sig_name
+        )
+      }
+    }
+  }
+  
+  sig_df_complete <- bind_rows(sig_df_list)
+  
+  write.csv(sig_df_complete, 
+            file.path(output_dir, "ICI_signature_candidates_for_CosMx_detailed.csv"),
+            row.names = FALSE)
+  
+  # Simple version (original format)
+  sig_df_simple <- data.frame(
+    Signature = rep(names(signature_definitions), 
+                    sapply(signature_definitions, length)),
+    Gene = unlist(signature_definitions)
+  )
+  
+  write.csv(sig_df_simple, 
+            file.path(output_dir, "ICI_signature_candidates_for_CosMx.csv"),
+            row.names = FALSE)
+  
+  cat("\nâœ… Signature candidates created and saved\n")
+  cat("Total signatures:", length(signature_definitions), "\n")
+  cat("Total unique genes:", length(unique(unlist(signature_definitions))), "\n\n")
+}
+```
+
+---
+
+# 5. çµæžœã‚µãƒžãƒªãƒ¼ã¨ãƒ¬ãƒãƒ¼ãƒˆ {.tabset .tabset-fade}
+
+## ç·åˆã‚µãƒžãƒªãƒ¼
+
+```{r comprehensive_summary}
+cat("=== Comprehensive Analysis Summary ===\n")
+cat(strrep("=", 70), "\n\n")
+
+# Sample information
+cat("1. SAMPLE INFORMATION\n")
+cat("   Total cells analyzed:", ncol(scffpe), "\n")
+cat("   Sample groups:\n")
+group_summary <- table(scffpe$group)
+for(g in names(group_summary)) {
+  cat("     -", g, ":", group_summary[g], "cells\n")
+}
+
+# All cells DEG
+cat("\n2. ALL CELLS DEG ANALYSIS\n")
+if(exists("deg_ici_vs_rej_sig")) {
+  cat("   ICI_AKI vs Rejection:\n")
+  cat("     - Total significant genes:", nrow(deg_ici_vs_rej_sig), "\n")
+  cat("     - ICI_high:", sum(deg_ici_vs_rej_sig$direction == "ICI_high"), "\n")
+  cat("     - Rejection_high:", sum(deg_ici_vs_rej_sig$direction == "Rejection_high"), "\n")
+}
+if(exists("deg_ici_vs_drug_sig")) {
+  cat("   ICI_AKI vs Drug-AKI:\n")
+  cat("     - Total significant genes:", nrow(deg_ici_vs_drug_sig), "\n")
+  cat("     - ICI_high:", sum(deg_ici_vs_drug_sig$direction == "ICI_high"), "\n")
+  cat("     - Drug_high:", sum(deg_ici_vs_drug_sig$direction == "Drug_high"), "\n")
+}
+if(exists("ici_specific")) {
+  cat("   ICI-specific genes (both comparisons):", nrow(ici_specific), "\n")
+}
+
+# Cell type-specific DEG
+cat("\n3. CELL TYPE-SPECIFIC DEG ANALYSIS\n")
+if(length(celltype_deg_results) > 0) {
+  cat("   Analyzed cell types:", length(celltype_deg_results), "\n")
+  cat("   Total DEG combinations:", nrow(all_celltype_deg), "\n")
+}
+
+# CosMx overlap
+cat("\n4. COSMX PANEL OVERLAP\n")
+if(!is.null(cosmx_genes)) {
+  if(exists("ici_specific_cosmx")) {
+    cat("   ICI-specific genes in CosMx:", sum(ici_specific_cosmx$in_CosMx), "/", 
+        nrow(ici_specific_cosmx), 
+        sprintf(" (%.1f%%)\n", sum(ici_specific_cosmx$in_CosMx)/nrow(ici_specific_cosmx)*100))
+  }
+  if(exists("signature_definitions")) {
+    cat("   Signature candidates created:", length(signature_definitions), "\n")
+    for(sig in names(signature_definitions)) {
+      cat("     -", sig, ":", length(signature_definitions[[sig]]), "genes\n")
+    }
+  }
+}
+
+cat("\n5. OUTPUT FILES\n")
+output_files <- list.files(output_dir, full.names = FALSE)
+cat("   Total files created:", length(output_files), "\n")
+cat("   Location:", output_dir, "\n")
+
+cat("\n", strrep("=", 70), "\n")
+cat("âœ… Analysis Complete!\n")
+cat(strrep("=", 70), "\n\n")
+```
+
+## æ¬¡ã®ã‚¹ãƒ†ãƒƒãƒ—æŽ¨å¥¨
+
+```{r next_steps}
+cat("=== Recommended Next Steps ===\n\n")
+
+cat("ðŸ“Š COMPLETED IN THIS ANALYSIS:\n")
+cat("  âœ… Comprehensive DEG analysis (all cells + cell type-specific)\n")
+cat("  âœ… ICI-_KI specific gene identification\n")
+cat("  âœ… CosMx 1K panel overlap confirmation\n")
+cat("  âœ… Signature candidates for spatial validation\n\n")
+
+cat("ðŸŽ¯ NEXT ANALYSIS PHASE:\n")
+cat("  1. CosMx Signature Projection\n")
+cat("     - Load CosMx annotated data (20251117_CosMx_comprehensive_annotation.rds)\n")
+cat("     - Project ICI-signatures using AddModuleScore\n")
+cat("     - Visualize spatial distribution\n\n")
+
+cat("  2. Spatial Validation\n")
+cat("     - Density comparison (ICI vs non-ICI)\n")
+cat("     - Cell-cell interaction analysis\n")
+cat("     - Hotspot identification\n\n")
+
+cat("  3. Pathway Enrichment\n")
+cat("     - GO/KEGG analysis on DEG lists\n")
+cat("     - Functional annotation\n")
+cat("     - Network analysis\n\n")
+
+cat("ðŸ“ KEY OUTPUT FILES TO USE:\n")
+cat("  - ICI_specific_genes_CosMx_overlap.csv\n")
+cat("  - ICI_signature_candidates_for_CosMx.rds\n")
+cat("  - celltype_specific_DEG_results.rds\n")
+cat("  - celltype_DEG_CosMx_overlap.rds\n\n")
+
+cat("ðŸ’¡ TIPS FOR SPATIAL PROJECTION:\n")
+cat("  - Use 5-10 genes per signature for robust module scores\n")
+cat("  - Validate with known markers (e.g., SPP1)\n")
+cat("  - Compare signature scores across conditions\n")
+cat("  - Focus on cell types with good marker coverage\n\n")
+```
+
+## ã‚»ãƒƒã‚·ãƒ§ãƒ³æƒ…å ±
+
+```{r session_info}
+cat("=== Session Information ===\n")
+sessionInfo()
+```
+
+---
+
+# ã¾ã¨ã‚
+
+## ä¸»è¦ãªæˆæžœ
+
+1. **åŒ…æ‹¬çš„DEGè§£æžã®å®Œäº†**
+   - å…¨ç´°èƒžãƒ¬ãƒ™ãƒ«ã§ã®3ç¾¤æ¯”è¼ƒ
+   - ç´°èƒžã‚¿ã‚¤ãƒ—åˆ¥ã®è©³ç´°è§£æž
+   - ICI-AKIç‰¹ç•°çš„éºä¼å­ã®åŒå®š
+
+2. **CosMxçµ±åˆæº–å‚™ã®å®Œäº†**
+   - 1Kãƒ‘ãƒãƒ«ã¨ã®é‡è¤‡ç¢ºèª
+   - Signatureå€™è£œã®ä½œæˆ
+   - ç©ºé–“æŠ•å½±ç”¨ãƒ‡ãƒ¼ã‚¿ã®æ•´å‚™
+
+3. **æ¬¡ãƒ•ã‚§ãƒ¼ã‚ºã¸ã®æº–å‚™**
+   - æ˜Žç¢ºãªå‡ºåŠ›ãƒ•ã‚¡ã‚¤ãƒ«
+   - å†ç¾å¯èƒ½ãªè§£æžãƒ•ãƒ­ãƒ¼
+   - è©³ç´°ãªãƒ‰ã‚­ãƒ¥ãƒ¡ãƒ³ãƒ†ãƒ¼ã‚·ãƒ§ãƒ³
+
+## æŠ€è¡“çš„ç‰¹å¾´
+
+- **é ‘å¥ãªçµ±è¨ˆæ‰‹æ³•**: Wilcoxonæ¤œå®š + BHè£œæ­£
+- **ç”Ÿç‰©å­¦çš„æ„ç¾©é‡è¦–**: Effect size (log2FC) + çµ±è¨ˆçš„æœ‰æ„æ€§
+- **å®Ÿç”¨çš„ãªå‡ºåŠ›**: CosMxæŠ•å½±å¯èƒ½ãªãƒ•ã‚©ãƒ¼ãƒžãƒƒãƒˆ
+
+## å­¦è¡“çš„ä¾¡å€¤
+
+- ICI-AKIç‰¹ç•°çš„ãªåˆ†å­ã‚·ã‚°ãƒãƒãƒ£ã®ç™ºè¦‹
+- ç´°èƒžã‚¿ã‚¤ãƒ—åˆ¥ã®ç—…æ…‹ãƒ¡ã‚«ãƒ‹ã‚ºãƒ è§£æ˜Ž
+- ç©ºé–“ãƒˆãƒ©ãƒ³ã‚¹ã‚¯ãƒªãƒ—ãƒˆãƒŸã‚¯ã‚¹ã¨ã®çµ±åˆåŸºç›¤
+
+---
+
+**Analysis completed**: `r Sys.time()`
+
+**Output directory**: `r output_dir`

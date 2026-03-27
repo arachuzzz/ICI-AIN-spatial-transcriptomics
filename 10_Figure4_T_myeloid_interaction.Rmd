@@ -1,0 +1,1714 @@
+---
+title: "scFFPE Figure 2 & CosMx Figure 4: ICI-AKI Signature Discovery and Spatial Coupling"
+author: "Kidney ICI-AKI Research Project"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 4
+    code_folding: show
+    theme: cosmo
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  fig.width = 12,
+  fig.height = 8,
+  dpi = 300
+)
+```
+
+# ãƒ—ãƒ­ã‚¸ã‚§ã‚¯ãƒˆæ¦‚è¦
+
+## ç›®çš„
+1. **scFFPE Figure 2**: ICIç‰¹ç•°çš„ã‚·ã‚°ãƒãƒãƒ£ãƒ¼ã®ã‚½ãƒ¼ã‚¹ã‚¨ãƒ“ãƒ‡ãƒ³ã‚¹ã‚’ç¤ºã™
+   - 2A: Workflow schematicï¼ˆæ‰‹å‹•ä½œæˆæ¸ˆã¿ï¼‰
+   - 2B: scFFPE UMAP (ä¸»è¦ç´°èƒžã‚¿ã‚¤ãƒ—ã¨ã‚·ã‚°ãƒãƒãƒ£ãƒ¼éºä¼å­)
+   - 2C: scFFPE DEG heatmap
+   
+2. **CosMx Figure 4**: Tç´°èƒžÃ—éª¨é«„ç³»ç´°èƒžã®ç©ºé–“çš„ç›¸äº’ä½œç”¨
+   - 4A: Nearest-neighbor Tâ†’Myeloid distance
+   - 4B: Co-localization index
+   - 4C: Exhaustion-high T cells Ã— Myeloid-Activation-high overlap
+   - 4D: Spatial correlation (Ripley's K or radial density)
+
+## ãƒ‡ãƒ¼ã‚¿æ§‹é€ 
+- **scFFPE**: `/Users/HiroyukiArai/Documents/å¤§å­¦é™¢/ç ”ç©¶çµæžœ/2024æ‘ä¸Šå…ˆç”ŸCosMX/202406 single cell FFPE data/scFFPE_kidney_analysis/results/scffpe_additional_analysis_complete_doublet_removed.rds`
+- **CosMx**: `/Users/HiroyukiArai/Documents/å¤§å­¦é™¢/ç ”ç©¶çµæžœ/2024æ‘ä¸Šå…ˆç”ŸCosMX/20251117_CosMx_SCT_nolabeltransfer_comprehensive_annotation.rds`
+- **Signatures**: `ICI_signature_candidates_for_CosMx.rds`
+
+---
+
+# 1. ç’°å¢ƒæº–å‚™ {.tabset .tabset-fade}
+
+## ãƒ©ã‚¤ãƒ–ãƒ©ãƒªèª­ã¿è¾¼ã¿
+
+```{r load_libraries}
+cat("=== Loading Required Libraries ===\n")
+
+suppressPackageStartupMessages({
+  # Core
+  library(Seurat)
+  library(SeuratObject)
+  library(dplyr)
+  library(tidyr)
+  library(tibble)
+  
+  # Visualization
+  library(ggplot2)
+  library(patchwork)
+  library(viridis)
+  library(RColorBrewer)
+  library(pheatmap)
+  library(ggrepel)
+  
+  # Spatial analysis
+  library(spatstat)
+  library(dbscan)
+  
+  # Statistics
+  library(ggpubr)
+  library(rstatix)
+  
+  # Data handling
+  library(readxl)
+  library(DT)
+  library(kableExtra)
+})
+
+cat("âœ… All libraries loaded\n")
+cat("Seurat version:", as.character(packageVersion("Seurat")), "\n")
+cat("R version:", R.version.string, "\n\n")
+```
+
+## ãƒ‡ã‚£ãƒ¬ã‚¯ãƒˆãƒªè¨­å®š
+
+```{r setup_directories}
+cat("=== Setting up Directories ===\n")
+
+# 2ã¤ã®å¯èƒ½æ€§ã®ã‚ã‚‹ãƒ™ãƒ¼ã‚¹ãƒ‡ã‚£ãƒ¬ã‚¯ãƒˆãƒªã‚’è©¦è¡Œ
+base_dir_options <- c(
+  "/Users/HiroyukiArai/Documents/2025å¹´ç•™å­¦/ç ”ç©¶é–¢é€£/ç ”ç©¶çµæžœ/202509 cosmx-kidney-project",
+  "/Users/HiroyukiArai/Documents/å¤§å­¦é™¢/ç ”ç©¶çµæžœ/2024æ‘ä¸Šå…ˆç”ŸCosMX"
+)
+
+base_dir <- NULL
+for (dir in base_dir_options) {
+  if (dir.exists(dir)) {
+    base_dir <- dir
+    break
+  }
+}
+
+if (is.null(base_dir)) {
+  stop("âŒ Base directory not found. Please check the path.")
+}
+
+cat("âœ… Using base directory:", base_dir, "\n")
+
+# scFFPE directory
+scffpe_base <- "/Users/HiroyukiArai/Documents/å¤§å­¦é™¢/ç ”ç©¶çµæžœ/2024æ‘ä¸Šå…ˆç”ŸCosMX/202406 single cell FFPE data/scFFPE_kidney_analysis"
+scffpe_data_dir <- file.path(scffpe_base, "results")
+scffpe_deg_dir <- file.path(scffpe_base, "results/DEG_analysis")
+
+# CosMx directory
+cosmx_data_dir <- base_dir
+
+# Output directory - timestamped
+timestamp <- format(Sys.time(), "%Y%m%d_%H%M%S")
+output_dir <- file.path(base_dir, "results/figures", 
+                        paste0("20251125_Figure2_and_Figure4_", timestamp))
+dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+
+# Create subdirectories
+dir.create(file.path(output_dir, "Figure2"), showWarnings = FALSE)
+dir.create(file.path(output_dir, "Figure4"), showWarnings = FALSE)
+dir.create(file.path(output_dir, "Statistics"), showWarnings = FALSE)
+
+cat("\nDirectory structure:\n")
+cat("  scFFPE data:", scffpe_data_dir, "\n")
+cat("  scFFPE DEG:", scffpe_deg_dir, "\n")
+cat("  CosMx data:", cosmx_data_dir, "\n")
+cat("  Output:", output_dir, "\n\n")
+```
+
+## ã‚«ãƒ©ãƒ¼ãƒ‘ãƒ¬ãƒƒãƒˆå®šç¾©
+
+```{r define_colors}
+cat("=== Defining Color Palettes ===\n")
+
+# Condition colors
+condition_colors <- c(
+  "ICI-AKI" = "#E41A1C",
+  "ICI_AKI" = "#E41A1C",
+  "Rejection" = "#377EB8",
+  "Drug-induced_AKI" = "#4DAF4A",
+  "Drug_AKI" = "#4DAF4A"
+)
+
+# Sample colors
+sample_colors <- c(
+  "S0" = "#377EB8",
+  "S1" = "#E41A1C",
+  "S2" = "#4DAF4A",
+  "S3" = "#984EA3"
+)
+
+# Major cell type colors
+major_celltype_colors <- c(
+  "Epithelial" = "#E41A1C",
+  "Tubular_cells" = "#E41A1C",
+  "Endothelial" = "#377EB8",
+  "Immune" = "#4DAF4A",
+  "Immune_cells" = "#4DAF4A",
+  "Stromal" = "#984EA3",
+  "Stromal_cells" = "#984EA3",
+  "Other" = "#999999"
+)
+
+# Immune cell type colors
+immune_colors <- c(
+  "CD4_T_cell" = "#E41A1C",
+  "CD8_T_cell" = "#377EB8",
+  "DP_T_cell" = "#4DAF4A",
+  "T_cell" = "#984EA3",
+  "Treg" = "#FF7F00",
+  "B_cell" = "#FFFF33",
+  "Macrophage" = "#A65628",
+  "Dendritic_cell" = "#F781BF",
+  "NK_cell" = "#999999"
+)
+
+cat("âœ… Color palettes defined\n\n")
+```
+
+## è«–æ–‡ç”¨ãƒ†ãƒ¼ãƒž
+
+```{r plot_theme}
+cat("=== Defining Publication Theme ===\n")
+
+# Base theme for all plots
+theme_publication <- function(base_size = 12) {
+  theme_bw(base_size = base_size) +
+    theme(
+      # Text
+      plot.title = element_text(size = base_size + 2, face = "bold", hjust = 0.5),
+      plot.subtitle = element_text(size = base_size, hjust = 0.5),
+      axis.title = element_text(size = base_size, face = "bold"),
+      axis.text = element_text(size = base_size - 1, color = "black"),
+      
+      # Legend
+      legend.title = element_text(size = base_size, face = "bold"),
+      legend.text = element_text(size = base_size - 1),
+      legend.background = element_rect(fill = "white", color = "black"),
+      legend.key.size = unit(0.5, "cm"),
+      
+      # Panel
+      panel.background = element_rect(fill = "white"),
+      panel.grid.major = element_line(color = "grey90", size = 0.3),
+      panel.grid.minor = element_blank(),
+      panel.border = element_rect(color = "black", fill = NA, size = 1),
+      
+      # Strip (facet labels)
+      strip.background = element_rect(fill = "grey90", color = "black"),
+      strip.text = element_text(size = base_size, face = "bold"),
+      
+      # Margins
+      plot.margin = margin(10, 10, 10, 10)
+    )
+}
+
+cat("âœ… Publication theme defined\n\n")
+```
+
+---
+
+# 2. ãƒ‡ãƒ¼ã‚¿èª­ã¿è¾¼ã¿ {.tabset .tabset-fade}
+
+## scFFPEãƒ‡ãƒ¼ã‚¿èª­ã¿è¾¼ã¿
+
+```{r load_scffpe}
+cat("=== Loading scFFPE Data ===\n")
+
+scffpe_file <- file.path(scffpe_data_dir, "scffpe_additional_analysis_complete_doublet_removed.rds")
+
+if (!file.exists(scffpe_file)) {
+  stop("âŒ scFFPE file not found: ", scffpe_file)
+}
+
+cat("Loading scFFPE object...\n")
+scffpe <- readRDS(scffpe_file)
+
+cat("âœ… scFFPE data loaded\n")
+cat("Total cells:", ncol(scffpe), "\n")
+cat("Total genes:", nrow(scffpe), "\n")
+cat("Assays:", names(scffpe@assays), "\n")
+
+# Check metadata
+cat("\nAvailable metadata columns:\n")
+print(colnames(scffpe@meta.data))
+
+# Create group column if not exists
+if (!"group" %in% colnames(scffpe@meta.data)) {
+  cat("\nCreating 'group' column...\n")
+  
+  # Check sample column name
+  sample_col <- if ("sample" %in% colnames(scffpe@meta.data)) {
+    "sample"
+  } else if ("orig.ident" %in% colnames(scffpe@meta.data)) {
+    "orig.ident"
+  } else {
+    stop("Cannot find sample information column")
+  }
+  
+  # Create group
+  scffpe$group <- case_when(
+    grepl("S0", scffpe@meta.data[[sample_col]]) ~ "Rejection",
+    grepl("S1|S3", scffpe@meta.data[[sample_col]]) ~ "ICI_AKI",
+    grepl("S2", scffpe@meta.data[[sample_col]]) ~ "Drug_AKI",
+    TRUE ~ "Unknown"
+  )
+  
+  cat("âœ… 'group' column created\n")
+  print(table(scffpe$group))
+}
+
+cat("\n")
+```
+
+## CosMxãƒ‡ãƒ¼ã‚¿èª­ã¿è¾¼ã¿
+```{r load_cosmx}
+cat("=== Loading CosMx Data ===\n")
+
+# ã‚·ã‚°ãƒãƒãƒ£ãƒ¼ã‚¹ã‚³ã‚¢ä»˜ãCosMxãƒ•ã‚¡ã‚¤ãƒ«ï¼ˆFigure 3ã¨åŒã˜ï¼‰
+cosmx_file <- "/Users/HiroyukiArai/Documents/2025å¹´ç•™å­¦/ç ”ç©¶é–¢é€£/ç ”ç©¶çµæžœ/202509 cosmx-kidney-project/results/figures/20251120_CosMx_Signature_Projection_20251120_175233/CosMx_with_signatures_20251120_175944.rds"
+
+if (!file.exists(cosmx_file)) {
+  stop("âŒ CosMx file not found: ", cosmx_file)
+}
+
+cat("Loading CosMx object from:", basename(cosmx_file), "\n")
+cosmx <- readRDS(cosmx_file)
+
+cat("âœ… CosMx data loaded\n")
+cat("Total cells:", ncol(cosmx), "\n")
+cat("Total genes:", nrow(cosmx), "\n")
+cat("Samples:", paste(unique(cosmx$sample), collapse = ", "), "\n")
+
+# Check metadata
+cat("\nAvailable metadata columns:\n")
+print(colnames(cosmx@meta.data))
+
+# Check for signature scores
+sig_cols <- grep("_1$", colnames(cosmx@meta.data), value = TRUE)
+cat("\n=== Signature Scores Available ===\n")
+print(sig_cols)
+
+# Check for spatial coordinates
+if ("x_slide_mm" %in% colnames(cosmx@meta.data)) {
+  cat("\nâœ… Using x_slide_mm, y_slide_mm (global slide coordinates)\n")
+  x_col <- "x_slide_mm"
+  y_col <- "y_slide_mm"
+} else if ("x_global_px" %in% colnames(cosmx@meta.data)) {
+  cat("âœ… Using x_global_px, y_global_px\n")
+  x_col <- "x_global_px"
+  y_col <- "y_global_px"
+} else if ("x_FOV_px" %in% colnames(cosmx@meta.data)) {
+  cat("âš ï¸ Using x_FOV_px, y_FOV_px (FOV-level coordinates)\n")
+  x_col <- "x_FOV_px"
+  y_col <- "y_FOV_px"
+} else {
+  stop("âŒ No coordinate columns found")
+}
+
+cat("\n")
+```
+
+## Signatureèª­ã¿è¾¼ã¿
+
+```{r load_signatures}
+cat("=== Loading ICI Signatures ===\n")
+
+signature_file <- file.path(scffpe_deg_dir, "ICI_signature_candidates_for_CosMx.rds")
+
+if (!file.exists(signature_file)) {
+  stop("âŒ Signature file not found: ", signature_file)
+}
+
+signatures <- readRDS(signature_file)
+
+cat("âœ… Signatures loaded\n")
+cat("Number of signatures:", length(signatures), "\n")
+cat("\nSignature names:\n")
+for (i in seq_along(signatures)) {
+  sig_name <- names(signatures)[i]
+  sig_genes <- signatures[[i]]
+  cat(sprintf("  %2d. %-30s: %2d genes\n", i, sig_name, length(sig_genes)))
+}
+
+cat("\n")
+```
+
+## DEGçµæžœèª­ã¿è¾¼ã¿
+
+```{r load_deg_results}
+cat("=== Loading DEG Results ===\n")
+
+# ICI-specific genes
+ici_specific_file <- file.path(scffpe_deg_dir, "ICI_specific_genes_all_cells.csv")
+
+if (file.exists(ici_specific_file)) {
+  ici_specific_genes <- read.csv(ici_specific_file)
+  cat("âœ… ICI-specific genes loaded:", nrow(ici_specific_genes), "genes\n")
+} else {
+  cat("âš ï¸ ICI-specific genes file not found\n")
+  ici_specific_genes <- NULL
+}
+
+# Cell type-specific DEGs
+celltype_deg_file <- file.path(scffpe_deg_dir, "All_celltype_specific_DEGs.csv")
+
+if (file.exists(celltype_deg_file)) {
+  celltype_degs <- read.csv(celltype_deg_file)
+  cat("âœ… Cell type-specific DEGs loaded:", nrow(celltype_degs), "entries\n")
+} else {
+  cat("âš ï¸ Cell type-specific DEG file not found\n")
+  celltype_degs <- NULL
+}
+
+cat("\n")
+```
+
+---
+
+# 3. Figure 2: scFFPE Signature Source Evidence {.tabset .tabset-fade}
+
+## Figure 2B: scFFPE UMAP (ä¿®æ­£ç‰ˆ)
+```{r figure2b_umap, fig.width=16, fig.height=14}
+cat("=== Creating Figure 2B: scFFPE UMAP ===\n")
+
+# Set default assay
+DefaultAssay(scffpe) <- "RNA"
+
+# Run UMAP if not present
+if (!"umap" %in% names(scffpe@reductions)) {
+  cat("Running UMAP...\n")
+  scffpe <- RunUMAP(scffpe, dims = 1:30, reduction = "pca")
+}
+
+# Check available cell type columns
+cat("\nAvailable cell type information:\n")
+if ("major_celltype" %in% colnames(scffpe@meta.data)) {
+  cat("âœ… major_celltype found\n")
+  cat("   Categories:", paste(unique(scffpe$major_celltype), collapse = ", "), "\n")
+}
+if ("detailed_celltype" %in% colnames(scffpe@meta.data)) {
+  cat("âœ… detailed_celltype found\n")
+  cat("   Categories (", length(unique(scffpe$detailed_celltype)), " types)\n")
+}
+
+# Define comprehensive color palette for major cell types
+major_celltype_colors_full <- c(
+  # Immune cells
+  "T_NK_cells" = "#E41A1C",
+  "B_Plasma_cells" = "#377EB8",
+  "Myeloid_cells" = "#4DAF4A",
+  # Epithelial/Tubular
+  "Tubular_cells" = "#984EA3",
+  "Glomerular_cells" = "#FF7F00",
+  # Stromal/Endothelial
+  "Endothelial_cells" = "#FFFF33",
+  "Stromal_cells" = "#A65628",
+  # Other
+  "Other" = "#999999",
+  "Unassigned" = "#F781BF"
+)
+
+# Plot 1: UMAP by major cell type (ã™ã¹ã¦è¡¨ç¤º)
+cat("\nCreating major cell type UMAP...\n")
+
+# â˜… Other ã‚’å‡¡ä¾‹ã®ä¸€ç•ªä¸‹ã«ã™ã‚‹ï¼ˆãƒ¬ãƒ™ãƒ«ä¸¦ã³æ›¿ãˆã ã‘ï¼‰
+scffpe$major_celltype <- factor(
+  scffpe$major_celltype,
+  levels = c(
+    setdiff(unique(scffpe$major_celltype), "Other"),
+    "Other"
+  )
+)
+
+p2b_major <- DimPlot(
+  scffpe,
+  reduction = "umap",
+  group.by = "major_celltype",
+  cols = major_celltype_colors_full,
+  pt.size = 0.5,
+  alpha = 0.5,
+  raster = FALSE,
+  raster.dpi = c(1024, 1024),
+  label = TRUE,
+  label.size = 4,
+  repel = TRUE
+) +
+  theme_publication() +
+  theme(aspect.ratio = 1) + 
+  labs(
+    title = "scFFPE: Major Cell Types",
+    subtitle = sprintf("n = %d cells, %d types", 
+                      ncol(scffpe), 
+                      length(unique(scffpe$major_celltype))),
+    x = "UMAP 1",
+    y = "UMAP 2"
+  ) +
+
+  # â˜… å‡¡ä¾‹ã‚’ç¸¦ 1 åˆ—ã«
+  guides(color = guide_legend(override.aes = list(size = 3), ncol = 1))
+
+# Plot 2: UMAP by detailed cell type
+cat("Creating detailed cell type UMAP...\n")
+
+# Plot 2: UMAP by detailed cell type
+cat("Creating detailed cell type UMAP...\n")
+
+# Generate color palette for detailed cell types
+n_detailed <- length(unique(scffpe$detailed_celltype))
+detailed_colors <- colorRampPalette(
+  c("#E41A1C", "#377EB8", "#4DAF4A", "#984EA3",
+    "#FF7F00", "#FFFF33", "#A65628", "#F781BF")
+)(n_detailed)
+names(detailed_colors) <- sort(unique(scffpe$detailed_celltype))
+
+p2b_detailed <- DimPlot(
+  scffpe,
+  reduction = "umap",
+  group.by = "detailed_celltype",
+  cols = detailed_colors,
+  pt.size = 0.5,
+  alpha = 0.5,  # è¿½åŠ : é€æ˜Žåº¦èª¿æ•´
+  raster = FALSE,  # å¤‰æ›´: ã‚ˆã‚Šé®®æ˜Žã«
+  label = FALSE,  # å¤‰æ›´: TRUEã«ã™ã‚‹ã¨ãƒ©ãƒ™ãƒ«ãŒã¤ã
+  label.size = 3,
+  repel = TRUE
+) +
+  theme_publication() +
+  labs(
+    title = "scFFPE: Detailed Cell Types",
+    subtitle = sprintf("n = %d cells, %d types",
+                      ncol(scffpe),
+                      n_detailed),
+    x = "UMAP 1",
+    y = "UMAP 2"
+  ) +
+  theme(
+    legend.text = element_text(size = 7),
+    legend.position = "right",  # å¤‰æ›´: å‡¡ä¾‹ã‚’å³å´ã«
+    legend.key.size = unit(0.3, "cm"),  # å‡¡ä¾‹ã‚¢ã‚¤ã‚³ãƒ³ã‚’å°ã•ã
+    aspect.ratio = 1  # è¿½åŠ : æ­£æ–¹å½¢ã«ã™ã‚‹
+  ) +
+  guides(color = guide_legend(override.aes = list(size = 2), ncol = 1))  # å¤‰æ›´: 1åˆ—è¡¨ç¤º
+
+# Plot 3: UMAP by condition
+# Condition colors (Drug_AKI / ICI_AKI / Rejection)
+condition_colors <- c(
+  "Drug_AKI" = "#4DAF4A",
+  "ICI_AKI"  = "#E41A1C",
+  "Rejection"= "#377EB8"
+)
+
+p2b_condition <- DimPlot(
+  scffpe,
+  reduction = "umap",
+  group.by = "group",
+  cols = condition_colors,
+  split.by  = "group",   # â˜… æ¡ä»¶ã”ã¨ã«ãƒ‘ãƒãƒ«åˆ†å‰²
+  ncol      = 3,
+  pt.size = 0.3,
+  alpha = 0.8,
+  raster = FALSE,
+  raster.dpi = c(1024, 1024)
+) +
+  theme_publication() +
+    theme(aspect.ratio = 1) + 
+  labs(
+    title = "scFFPE: Condition",
+    x = "UMAP 1",
+    y = "UMAP 2"
+  ) +
+  guides(color = guide_legend(override.aes = list(size = 3)))
+
+# Plot 4: Feature plot for key signature genes
+key_genes <- c("PDCD1", "HAVCR2", "CXCL9", "SPP1", "GPX3", "CXCL14")
+
+# éºä¼å­ã‚¢ãƒŽãƒ†ãƒ¼ã‚·ãƒ§ãƒ³å®šç¾©ï¼ˆã“ã“ã«è¿½åŠ ï¼‰
+gene_annotations <- data.frame(
+  gene = c("PDCD1", "HAVCR2", "CXCL9", "SPP1", "GPX3", "CXCL14"),
+  category = c("T Exhaustion", "T Exhaustion", "IFN/Myeloid", 
+               "Biomarker", "Tissue Stress", "Immune-Tubule"),
+  stringsAsFactors = FALSE
+)
+
+key_genes_available <- intersect(key_genes, rownames(scffpe))
+
+cat("Key genes available:", length(key_genes_available), "/", length(key_genes), "\n")
+
+p2b_features <- FeaturePlot(
+  scffpe,
+  features = key_genes_available[1:min(6, length(key_genes_available))],
+  reduction = "umap",
+  ncol = 3,
+  pt.size = 0.5,
+  raster = FALSE,
+  raster.dpi = c(512, 512),
+   cols       = c("grey90", "yellow", "orange", "red", "darkred"),
+  order = TRUE,
+  min.cutoff = "q60",   # ä¸‹ä½60%ã‚’ã‚°ãƒ¬ãƒ¼ã«ã¾ã¨ã‚ã‚‹
+  max.cutoff = "q99" 
+) &
+  theme_publication() &
+  theme(
+    legend.position = "right",
+    plot.title = element_text(size = 10, face = "bold"),
+    plot.subtitle = element_text(size = 8)
+  )&
+  theme(aspect.ratio = 1)
+
+# ã•ã‚‰ã«å„éºä¼å­ã«èª¬æ˜Žã‚µãƒ–ã‚¿ã‚¤ãƒˆãƒ«è¿½åŠ ï¼ˆæŽ¨å¥¨ï¼‰
+for(i in seq_along(key_genes_available)) {
+  gene <- key_genes_available[i]
+  category <- gene_annotations$category[gene_annotations$gene == gene]
+  p2b_features[[i]] <- p2b_features[[i]] + 
+    labs(subtitle = category)
+}
+  
+  # Combine all plots
+if (length(key_genes_available) > 0) {
+  p2b_combined <- (p2b_major | p2b_condition) / 
+                  p2b_detailed / 
+                  p2b_features +
+    plot_layout(heights = c(1, 1, 1.2)) +
+    plot_annotation(
+      title = "Figure 2B: scFFPE Single-Cell Transcriptomic Atlas",
+      theme = theme(plot.title = element_text(size = 16, face = "bold", hjust = 0.5))
+    )
+ } else {
+  # Without feature plots
+  p2b_combined <- (p2b_major | p2b_condition) / p2b_detailed +
+    plot_layout(heights = c(1, 1))
+}
+
+print(p2b_combined)
+
+# Save
+ggsave(
+  filename = file.path(output_dir, "Figure2/Figure2B_scFFPE_UMAP.png"),
+  plot = p2b_combined,
+  width = 16,
+  height = 14,
+  dpi = 300
+)
+
+ggsave(
+  filename = file.path(output_dir, "Figure2/Figure2B_scFFPE_UMAP.pdf"),
+  plot = p2b_combined,
+  width = 16,
+  height = 14
+)
+
+# Print cell type distribution summary
+cat("\n=== Cell Type Distribution ===\n")
+cat("\nMajor cell types:\n")
+print(table(scffpe$major_celltype))
+
+cat("\nDetailed cell types (top 15):\n")
+detailed_table <- sort(table(scffpe$detailed_celltype), decreasing = TRUE)
+print(head(detailed_table, 15))
+
+# Save cell type statistics
+write.csv(
+  data.frame(
+    CellType = names(table(scffpe$major_celltype)),
+    Count = as.numeric(table(scffpe$major_celltype)),
+    Percentage = round(as.numeric(table(scffpe$major_celltype)) / ncol(scffpe) * 100, 2)
+  ),
+  file.path(output_dir, "Statistics/Figure2B_major_celltype_distribution.csv"),
+  row.names = FALSE
+)
+
+write.csv(
+  data.frame(
+    CellType = names(table(scffpe$detailed_celltype)),
+    Count = as.numeric(table(scffpe$detailed_celltype)),
+    Percentage = round(as.numeric(table(scffpe$detailed_celltype)) / ncol(scffpe) * 100, 2)
+  ),
+  file.path(output_dir, "Statistics/Figure2B_detailed_celltype_distribution.csv"),
+  row.names = FALSE
+)
+
+cat("âœ… Figure 2B created and saved\n\n")
+```
+
+## Figure 2C: ICI Signature Expression by Cell Type
+```{r figure2c_signature_heatmap, fig.width=10, fig.height=8}
+cat("=== Creating Figure 2C: ICI-AKI Signature Heatmap (simplified) ===\n")
+
+if (!is.null(ici_specific_genes)) {
+
+  ## ---- STEP 1: Gene selection (scFFPE-driven) ----
+
+  # scFFPE ã§åˆ©ç”¨å¯èƒ½ãª Top DEGï¼ˆeffect sizeé †ï¼‰
+  top_deg_genes <- ici_specific_genes %>%
+    dplyr::filter(gene %in% rownames(scffpe)) %>%
+    dplyr::arrange(dplyr::desc(abs(mean_log2FC))) %>%
+    dplyr::slice(1:20) %>%
+    dplyr::pull(gene)
+
+  cat("Top 20 DEG genes identified in scFFPE.\n")
+
+  # å¿…é ˆéºä¼å­ï¼ˆFigure2B / CosMx signature ã¨æ•´åˆï¼‰
+  mandatory_genes <- c(
+    "PDCD1",   # Immune / IFN (T exhaustion)
+    "HAVCR2",  # Immune / IFN
+    "CXCL9",   # Immune / IFN
+    "SPP1",    # Tubular / metabolic (biomarker)
+    "GPX3",    # Tubular / metabolic (stress)
+    "CXCL14"   # Tubular / metabolic (immune-tubule)
+  )
+
+  # çµ±åˆï¼ˆmandatory + Top DEGï¼‰
+  key_signature_genes <- unique(c(mandatory_genes, top_deg_genes))
+
+  # scFFPE ã«å­˜åœ¨ã™ã‚‹éºä¼å­ã®ã¿
+  key_genes_available <- intersect(key_signature_genes, rownames(scffpe))
+
+  # å‚è€ƒï¼šCosMx ãƒ‘ãƒãƒ«ã¨ã®ã‚ªãƒ¼ãƒãƒ¼ãƒ©ãƒƒãƒ—ï¼ˆãƒ•ã‚£ãƒ«ã‚¿ã¯ã—ãªã„ï¼‰
+  if (exists("signatures") && !is.null(signatures)) {
+    cosmx_genes   <- unique(unlist(signatures))
+    overlap_genes <- intersect(key_genes_available, cosmx_genes)
+
+    cat("\nCosMx panel overlap (for reference):\n")
+    cat("  Genes in Figure 2C:", length(key_genes_available), "\n")
+    cat("  Available in CosMx:", length(overlap_genes),
+        "(", round(100 * length(overlap_genes) /
+                      max(1, length(key_genes_available)), 1), "% )\n")
+    cat("  Overlap genes:", paste(overlap_genes, collapse = ", "), "\n\n")
+  }
+
+  ## éºä¼å­æ•°ã‚’ 15â€“25 ã«åˆ¶é™ï¼ˆmandatory ã‚’å„ªå…ˆï¼‰
+  if (length(key_genes_available) > 25) {
+    mandatory_available <- mandatory_genes[mandatory_genes %in% key_genes_available]
+    remaining_slots     <- 25 - length(mandatory_available)
+    other_genes         <- setdiff(key_genes_available, mandatory_available)
+    key_genes_available <- c(mandatory_available,
+                             head(other_genes, max(0, remaining_slots)))
+  }
+
+  cat("=== Final Gene Set ===\n")
+  cat("Total genes:", length(key_genes_available), "\n")
+  cat("Mandatory genes included:",
+      sum(mandatory_genes %in% key_genes_available), "/",
+      length(mandatory_genes), "\n")
+  cat("Genes:\n"); print(key_genes_available); cat("\n")
+
+  if (length(key_genes_available) >= 10) {
+
+    ## ---- STEP 2: Condition Ã— major_celltype pseudobulk ----
+
+    pseudobulk_list <- list()
+
+    for (condition in unique(scffpe$group)) {
+      for (ct in unique(scffpe$major_celltype)) {
+
+        cells <- rownames(scffpe@meta.data)[
+          scffpe@meta.data$group == condition &
+            scffpe@meta.data$major_celltype == ct
+        ]
+
+        # ç´°èƒžãŒå°‘ãªã™ãŽã‚‹çµ„ã¿åˆã‚ã›ã¯é™¤å¤–
+        if (length(cells) >= 10) {
+          expr_data <- GetAssayData(scffpe,
+                                    slot = "data",
+                                    assay = "RNA")[key_genes_available, cells,
+                                                   drop = FALSE]
+          mean_expr <- rowMeans(expr_data)
+          sample_id <- paste0(condition, "_", ct)
+          pseudobulk_list[[sample_id]] <- mean_expr
+        }
+      }
+    }
+
+    if (length(pseudobulk_list) == 0) {
+      cat("âš ï¸ No pseudobulk groups with â‰¥10 cells; skip Figure 2C.\n\n")
+    } else {
+
+      pseudobulk_matrix <- do.call(cbind, pseudobulk_list)
+      cat("Pseudobulk matrix:", nrow(pseudobulk_matrix), "genes x",
+          ncol(pseudobulk_matrix), "samples\n")
+
+      ## ---- STEP 3: Scaling & annotations ----
+
+      # gene-wise Z-score
+      pseudobulk_scaled <- t(scale(t(pseudobulk_matrix)))
+      pseudobulk_scaled[is.na(pseudobulk_scaled)] <- 0
+      pseudobulk_scaled[pseudobulk_scaled >  2.5] <-  2.5
+      pseudobulk_scaled[pseudobulk_scaled < -2.5] <- -2.5
+
+      # åˆ—ã‚¢ãƒŽãƒ†ãƒ¼ã‚·ãƒ§ãƒ³
+col_anno_df <- data.frame(
+  Sample = colnames(pseudobulk_scaled),
+  stringsAsFactors = FALSE
+) %>%
+  dplyr::mutate(
+    # Condition ã¯å…ˆé ­ã®å˜èªžï¼ˆDrug, ICI, Rejectionï¼‰
+    Condition  = sub("_.*", "", Sample),
+
+    # Cell_Type ã¯ã€Œå…ˆé ­ã®å˜èªž + ã‚¢ãƒ³ãƒ€ãƒ¼ã‚¹ã‚³ã‚¢ã€ã‚’è½ã¨ã—ãŸæ®‹ã‚Š
+    # Drug_AKI_Endothelial_cells â†’ AKI_Endothelial_cells
+    # Rejection_Endothelial_cells â†’ Endothelial_cells
+    Cell_Type  = sub("^[^_]+_", "", Sample),
+
+    # ã•ã‚‰ã« AKI_ ã¨ã„ã†ãƒ—ãƒ¬ãƒ•ã‚£ãƒƒã‚¯ã‚¹ãŒä»˜ã„ã¦ã„ãŸã‚‰å‰Šã‚‹
+    # AKI_Endothelial_cells â†’ Endothelial_cells
+    Cell_Type  = sub("^AKI_", "", Cell_Type)
+  )
+      rownames(col_anno_df) <- col_anno_df$Sample
+      col_anno_df$Sample    <- NULL
+
+      ## Broad lineage ã«ã¾ã¨ã‚ã‚‹ï¼ˆTubular / Immune / Myeloid / ãªã©ï¼‰
+      col_anno_df$Broad_CellType <- dplyr::case_when(
+        grepl("Tubul",   col_anno_df$Cell_Type, ignore.case = TRUE) ~ "Tubular",
+        grepl("Myeloid", col_anno_df$Cell_Type, ignore.case = TRUE) ~ "Myeloid",
+        grepl("T_NK|Tcell|T_cell|B_Plasma|Bcell",
+              col_anno_df$Cell_Type, ignore.case = TRUE)           ~ "Immune",
+        grepl("Endothel",col_anno_df$Cell_Type, ignore.case = TRUE)~ "Endothelial",
+        grepl("Stromal", col_anno_df$Cell_Type, ignore.case = TRUE)~ "Stromal",
+        TRUE                                                        ~ "Other"
+      )
+   ## Condition colors ã‚’è«–æ–‡å…¨ä½“ã§çµ±ä¸€
+      condition_colors <- c(
+        "Drug"      = "#4DAF4A",  # green
+        "ICI"       = "#E41A1C",  # red
+        "Rejection" = "#377EB8"   # blue
+      )
+   ## Condition colorsï¼ˆDrug=ç·‘, ICI=èµ¤, Rejection=é’ ã«å›ºå®šï¼‰
+      present_conditions <- sort(unique(col_anno_df$Condition))
+      cond_cols <- condition_colors[present_conditions]
+
+      ## Broad cell type colorsï¼ˆã“ã®Figureå°‚ç”¨ã«è‡ªå‹•ç”Ÿæˆï¼‰
+      present_broad <- sort(unique(col_anno_df$Broad_CellType))
+      if (!requireNamespace("RColorBrewer", quietly = TRUE)) {
+        install.packages("RColorBrewer")
+      }
+      base_pal <- RColorBrewer::brewer.pal(max(length(present_broad), 3), "Set2")
+      celltype_cols <- setNames(
+        base_pal[seq_along(present_broad)],
+        present_broad
+      )
+
+      ## annotation_colors
+      ann_colors <- list(
+        Condition   = cond_cols,
+        Cell_Type   = celltype_cols   # Broad_CellType ã‚’è¡¨ç¤ºåã«ä½¿ã†
+      )
+
+      ## ä¸¦ã³æ›¿ãˆï¼šCondition â†’ Broad_CellType
+      col_anno_df$Condition      <- factor(col_anno_df$Condition,
+                                           levels = present_conditions)
+      col_anno_df$Broad_CellType <- factor(col_anno_df$Broad_CellType,
+                                           levels = present_broad)
+
+      col_anno_df <- col_anno_df %>%
+        dplyr::arrange(Condition, Broad_CellType)
+
+      pseudobulk_scaled <- pseudobulk_scaled[, rownames(col_anno_df)]
+
+      # Conditionãƒ–ãƒ­ãƒƒã‚¯ã®åŒºåˆ‡ã‚Š
+      gap_positions <- which(diff(as.numeric(col_anno_df$Condition)) != 0)
+     
+# xè»¸ãƒ©ãƒ™ãƒ«ã¨ã—ã¦ä½¿ã† cell type åï¼ˆConditionã¯è‰²ãƒãƒ¼ã§ç¤ºã™ï¼‰
+labels_col <- as.character(col_anno_df$Cell_Type)
+      
+      # pheatmap ç”¨ã« annotation_col ã‚’ä½œæˆï¼ˆCondition / Broad_CellTypeï¼‰
+      anno_col_for_pheatmap <- data.frame(
+        Condition = col_anno_df$Condition,
+        Cell_Type = col_anno_df$Broad_CellType,
+        row.names = rownames(col_anno_df),
+        stringsAsFactors = FALSE
+      )
+
+
+
+      ## ---- STEP 4: Heatmap ----
+
+      heat_cols <- colorRampPalette(c("navy", "white", "firebrick3"))(100)
+
+      p2c_heatmap <- pheatmap::pheatmap(
+        mat               = pseudobulk_scaled,
+        color             = heat_cols,
+        breaks            = seq(-2.5, 2.5, length.out = 101),
+        cluster_rows      = TRUE,
+        cluster_cols      = FALSE,
+        clustering_distance_rows = "correlation",
+        clustering_method = "ward.D2",
+        annotation_col    = anno_col_for_pheatmap,
+        annotation_colors = ann_colors,
+        gaps_col          = gap_positions,
+        show_colnames     = TRUE,
+        show_rownames     = TRUE,
+        fontsize_row      = 9,
+        fontsize_col      = 7,
+        angle_col         = 45,
+        main              = "ICI-AKI signature genes across condition and cell lineages (scFFPE)",
+        border_color      = NA,
+        cellwidth         = 15,
+        cellheight        = 12,
+        silent            = TRUE,
+        labels_col        = labels_col
+)
+
+      ## ---- Save outputs ----
+      png(
+        filename = file.path(output_dir,
+                             "Figure2/Figure2C_scFFPE_signature_by_celllineage.png"),
+        width = 10, height = 8, units = "in", res = 300
+      )
+      print(p2c_heatmap)
+      dev.off()
+
+      pdf(
+        file = file.path(output_dir,
+                         "Figure2/Figure2C_scFFPE_signature_by_celllineage.pdf"),
+        width = 10, height = 8
+      )
+      print(p2c_heatmap)
+      dev.off()
+
+      # å…ƒã® pseudobulk è¡Œåˆ—ã‚‚æ›¸ãå‡ºã—ï¼ˆãƒ¬ãƒ“ãƒ¥ãƒ¼å¯¾å¿œç”¨ï¼‰
+      write.csv(
+        pseudobulk_matrix,
+        file.path(output_dir, "Statistics/Figure2C_pseudobulk_expression.csv")
+      )
+
+      cat("âœ… Figure 2C (simplified) created and saved.\n\n")
+    }
+
+  } else {
+    cat("âš ï¸ Not enough key signature genes (need â‰¥10, found",
+        length(key_genes_available), ")\n\n")
+  }
+
+} else {
+  cat("âš ï¸ ici_specific_genes is NULL; skip Figure 2C.\n\n")
+}
+
+```
+
+
+      ## è¡Œã‚¢ãƒŽãƒ†ãƒ¼ã‚·ãƒ§ãƒ³ï¼šGene Category ã‚’ 3 ç¾¤ã«çµ±åˆ
+      gene_names <- rownames(pseudobulk_scaled)
+      gene_anno <- data.frame(
+        Category = dplyr::case_when(
+          gene_names %in% c("PDCD1", "HAVCR2", "CTLA4",
+                            "ENTPD1", "CXCL9", "CXCL10",
+                            "ISG15", "IFIT3") ~ "Immune",
+          gene_names %in% c("SPP1", "GPX3", "ALDOB", "UMOD",
+                            "FABP1", "HPD",
+                            "SLC34A1", "SLC22A7", "SLC13A3",
+                            "SLC6A19", "SLC9A3", "CXCL14") ~ "Tubular",
+          TRUE ~ "Other"
+        ),
+        row.names = gene_names,
+        stringsAsFactors = FALSE
+      )
+
+      ann_colors$Category <- c(
+        "Immune"       = "#E41A1C",
+        "Tubular"= "#377EB8",
+        "Other"              = "#999999"
+      )
+
+
+## Figure 2 çµ±åˆç¢ºèª
+
+```{r figure2_summary}
+cat("=== Figure 2 Summary ===\n")
+
+cat("Figure 2 Components:\n")
+cat("  2A: Workflow schematic (æ‰‹å‹•ä½œæˆæ¸ˆã¿)\n")
+cat("  2B: scFFPE UMAP âœ…\n")
+cat("  2C: DEG Heatmap âœ…\n")
+cat("  2D-2F: CosMx projection (æ—¢å­˜Figure 2)\n\n")
+
+cat("Message:\n")
+cat("  scFFPEç”±æ¥ã®ICIç‰¹ç•°çš„ã‚·ã‚°ãƒãƒãƒ£ãƒ¼ã®\n")
+cat("  ã‚½ãƒ¼ã‚¹ã‚¨ãƒ“ãƒ‡ãƒ³ã‚¹ã‚’æç¤º\n\n")
+```
+
+---
+
+# 4. Figure 4: T cell Ã— Myeloid Spatial Coupling {.tabset .tabset-fade}
+
+## ãƒ‡ãƒ¼ã‚¿æº–å‚™: ç´°èƒžã‚µãƒ–ã‚»ãƒƒãƒˆæŠ½å‡º
+
+```{r figure4_data_prep}
+cat("=== Preparing Data for Figure 4 ===\n")
+
+# Extract immune cells
+cat("Extracting immune cells...\n")
+immune_cells <- subset(cosmx, subset = major_celltype == "Immune")
+cat("Total immune cells:", ncol(immune_cells), "\n")
+
+# Check immune subtypes
+cat("\nImmune subtypes available:\n")
+print(table(immune_cells$immune_subtype))
+
+# Define T cells and Myeloid cells
+# Tç´°èƒžï¼šT_cell_General ã¨ NK_T_cell ã‚’å«ã‚€
+tcell_types <- c("T_cell_General", "NK_T_cell")
+myeloid_types <- c("Macrophage", "Dendritic_cell", "Monocyte")
+
+# Extract T cells
+tcells <- subset(immune_cells, subset = immune_subtype %in% tcell_types)
+cat("\nT cells (combined):", ncol(tcells), "\n")
+cat("  By subtype:\n")
+print(table(tcells$immune_subtype))
+
+# Extract Myeloid cells
+myeloid <- subset(immune_cells, subset = immune_subtype %in% myeloid_types)
+cat("\nMyeloid cells:", ncol(myeloid), "\n")
+cat("  By subtype:\n")
+print(table(myeloid$immune_subtype))
+
+# Note on T cell classification
+cat("\n=== Note ===\n")
+cat("Due to CosMx's 1000-gene panel limitation, we analyze T cells as a combined group\n")
+cat("rather than attempting uncertain CD4/CD8 subclassification.\n")
+cat("This approach ensures robust spatial interaction analysis.\n\n")
+```
+
+## Figure 4A: Nearest-Neighbor Distance
+
+```{r figure4a_nn_distance, fig.width=12, fig.height=8}
+cat("=== Creating Figure 4A: Tâ†’Myeloid Nearest-Neighbor Distance ===\n")
+
+# === FIX: Update condition_colors to match actual condition values ===
+cat("\n=== Fixing color mapping ===\n")
+
+# æ­£ã—ã„conditionåã«å¯¾å¿œã—ãŸã‚«ãƒ©ãƒ¼ãƒ‘ãƒ¬ãƒƒãƒˆã‚’ä½œæˆ
+condition_colors_fixed <- c(
+  "ICI-AKI" = "#E41A1C",           # èµ¤
+  "Rejection" = "#377EB8",          # é’
+  "Drug-induced_AKI" = "#4DAF4A"   # ç·‘
+)
+
+cat("Original condition_colors:\n")
+print(condition_colors)
+
+cat("\nFixed condition_colors:\n")
+print(condition_colors_fixed)
+
+# ä»¥é™ã®ãƒ—ãƒ­ãƒƒãƒˆã§ã“ã¡ã‚‰ã‚’ä½¿ç”¨
+condition_colors <- condition_colors_fixed
+
+# Calculate nearest-neighbor distances for each sample
+nn_distances_list <- list()
+
+for (sample_id in unique(cosmx$sample)) {
+  cat("\nProcessing sample:", sample_id, "\n")
+  
+  # Get T cells and Myeloid cells for this sample
+  tcells_sample <- subset(tcells, subset = sample == sample_id)
+  myeloid_sample <- subset(myeloid, subset = sample == sample_id)
+  
+  if (ncol(tcells_sample) > 0 && ncol(myeloid_sample) > 0) {
+    
+    # Extract coordinates
+    tcell_coords <- tcells_sample@meta.data[, c(x_col, y_col)]
+    myeloid_coords <- myeloid_sample@meta.data[, c(x_col, y_col)]
+    
+    # Calculate nearest-neighbor distances
+    nn_dists <- apply(tcell_coords, 1, function(tcell_pos) {
+      distances <- sqrt(
+        (myeloid_coords[, 1] - tcell_pos[1])^2 +
+        (myeloid_coords[, 2] - tcell_pos[2])^2
+      )
+      min(distances)
+    })
+    
+    # Store results
+    nn_distances_list[[sample_id]] <- data.frame(
+      cell_id = colnames(tcells_sample),
+      sample = sample_id,
+      condition = unique(tcells_sample$condition)[1],
+      nn_distance = nn_dists,
+      immune_subtype = tcells_sample$immune_subtype
+    )
+    
+    cat("  T cells:", nrow(tcell_coords), "\n")
+    cat("  Myeloid cells:", nrow(myeloid_coords), "\n")
+    cat("  Mean NN distance:", round(mean(nn_dists), 3), "\n")
+  }
+}
+
+# Combine results
+nn_distances_df <- bind_rows(nn_distances_list)
+
+cat("\nâœ… Nearest-neighbor distances calculated\n")
+cat("Total T cells analyzed:", nrow(nn_distances_df), "\n\n")
+
+# Statistical comparison
+stat_test <- nn_distances_df %>%
+  wilcox_test(nn_distance ~ condition) %>%
+  add_significance()
+
+cat("Statistical test results:\n")
+print(stat_test)
+
+# Visualization: Violin plot
+p4a_violin <- ggplot(nn_distances_df, aes(x = condition, y = nn_distance, fill = condition)) +
+  geom_violin(trim = FALSE, alpha = 0.7) +
+  geom_boxplot(width = 0.1, fill = "white", outlier.shape = NA) +
+  stat_compare_means(
+    comparisons = list(
+      c("ICI-AKI", "Rejection"),
+      c("ICI-AKI", "Drug-induced_AKI")
+    ),
+    method = "wilcox.test",
+    label = "p.format"
+  ) +
+  scale_fill_manual(values = condition_colors) +
+  theme_publication() +
+  labs(
+    title = "Figure 4A: T Cell â†’ Myeloid Cell Distance",
+    subtitle = "Nearest-neighbor distance analysis",
+    x = "Condition",
+    y = "Distance (Î¼m or pixels)",
+    fill = "Condition"
+  ) +
+  theme(legend.position = "none")
+
+print(p4a_violin)
+
+# Cumulative distribution
+p4a_cumulative <- ggplot(nn_distances_df, aes(x = nn_distance, color = condition)) +
+  stat_ecdf(size = 1.5) +
+  scale_color_manual(values = condition_colors) +
+  theme_publication() +
+  labs(
+    title = "Cumulative Distribution",
+    x = "Distance (Î¼m or pixels)",
+    y = "Cumulative Probability",
+    color = "Condition"
+  )
+
+print(p4a_cumulative)
+
+# Combine plots
+p4a_combined <- p4a_violin | p4a_cumulative
+
+# Save
+ggsave(
+  filename = file.path(output_dir, "Figure4/Figure4A_NN_Distance.png"),
+  plot = p4a_combined,
+  width = 12,
+  height = 6,
+  dpi = 300
+)
+
+ggsave(
+  filename = file.path(output_dir, "Figure4/Figure4A_NN_Distance.pdf"),
+  plot = p4a_combined,
+  width = 12,
+  height = 6
+)
+
+# Save statistics
+write.csv(
+  nn_distances_df,
+  file.path(output_dir, "Statistics/Figure4A_NN_distances.csv"),
+  row.names = FALSE
+)
+
+write.csv(
+  stat_test,
+  file.path(output_dir, "Statistics/Figure4A_statistical_tests.csv"),
+  row.names = FALSE
+)
+
+cat("âœ… Figure 4A created and saved\n\n")
+```
+
+## Figure 4B: Co-localization Index (Data-Driven Threshold)
+
+```{r figure4b_colocalization, fig.width=14, fig.height=10}
+cat("=== Creating Figure 4B: Co-localization Index ===\n")
+cat("Using data-driven threshold (25th percentile of distance distribution)\n\n")
+
+# Step 1: Calculate all Tâ†’Myeloid nearest-neighbor distances
+cat("Step 1: Calculating all Tâ†’Myeloid distances...\n")
+all_nn_distances <- c()
+
+for (sample_id in unique(cosmx$sample)) {
+  tcells_sample <- subset(tcells, subset = sample == sample_id)
+  myeloid_sample <- subset(myeloid, subset = sample == sample_id)
+  
+  if (ncol(tcells_sample) > 0 && ncol(myeloid_sample) > 0) {
+    tcell_coords <- tcells_sample@meta.data[, c(x_col, y_col)]
+    myeloid_coords <- myeloid_sample@meta.data[, c(x_col, y_col)]
+    
+    nn_dists <- apply(tcell_coords, 1, function(tcell_pos) {
+      distances <- sqrt(
+        (myeloid_coords[, 1] - tcell_pos[1])^2 +
+        (myeloid_coords[, 2] - tcell_pos[2])^2
+      )
+      min(distances)
+    })
+    
+    all_nn_distances <- c(all_nn_distances, nn_dists)
+  }
+}
+
+# Step 2: Set data-driven threshold (25th percentile)
+coloc_threshold <- quantile(all_nn_distances, 0.25)
+
+cat("\n=== Distance Distribution Statistics ===\n")
+cat("  Total pairs analyzed:", length(all_nn_distances), "\n")
+cat("  25th percentile (THRESHOLD):", round(coloc_threshold, 4), "\n")
+cat("  Median:", round(median(all_nn_distances), 4), "\n")
+cat("  75th percentile:", round(quantile(all_nn_distances, 0.75), 4), "\n\n")
+
+# Calculate co-localization index for each sample
+coloc_results_list <- list()
+
+for (sample_id in unique(cosmx$sample)) {
+  cat("\nProcessing sample:", sample_id, "\n")
+  
+  # Get T cells and Myeloid cells
+  tcells_sample <- subset(tcells, subset = sample == sample_id)
+  myeloid_sample <- subset(myeloid, subset = sample == sample_id)
+  
+  if (ncol(tcells_sample) > 0 && ncol(myeloid_sample) > 0) {
+    
+    # Extract coordinates
+    tcell_coords <- tcells_sample@meta.data[, c(x_col, y_col)]
+    myeloid_coords <- myeloid_sample@meta.data[, c(x_col, y_col)]
+    
+    # Count T cells with nearby myeloid cells
+    tcells_with_myeloid <- sum(apply(tcell_coords, 1, function(tcell_pos) {
+      distances <- sqrt(
+        (myeloid_coords[, 1] - tcell_pos[1])^2 +
+        (myeloid_coords[, 2] - tcell_pos[2])^2
+      )
+      any(distances <= coloc_threshold)
+    }))
+    
+    # Count myeloid cells with nearby T cells
+    myeloid_with_tcells <- sum(apply(myeloid_coords, 1, function(myeloid_pos) {
+      distances <- sqrt(
+        (tcell_coords[, 1] - myeloid_pos[1])^2 +
+        (tcell_coords[, 2] - myeloid_pos[2])^2
+      )
+      any(distances <= coloc_threshold)
+    }))
+    
+    # Calculate co-localization indices
+    tcell_coloc_index <- tcells_with_myeloid / nrow(tcell_coords)
+    myeloid_coloc_index <- myeloid_with_tcells / nrow(myeloid_coords)
+    
+    # Store results
+    coloc_results_list[[sample_id]] <- data.frame(
+      sample = sample_id,
+      condition = unique(tcells_sample$condition)[1],
+      n_tcells = nrow(tcell_coords),
+      n_myeloid = nrow(myeloid_coords),
+      tcells_with_myeloid = tcells_with_myeloid,
+      myeloid_with_tcells = myeloid_with_tcells,
+      tcell_coloc_index = tcell_coloc_index,
+      myeloid_coloc_index = myeloid_coloc_index
+    )
+    
+    cat("  T cells with nearby myeloid:", tcells_with_myeloid, 
+        "(", round(tcell_coloc_index * 100, 1), "%)\n")
+    cat("  Myeloid with nearby T cells:", myeloid_with_tcells, 
+        "(", round(myeloid_coloc_index * 100, 1), "%)\n")
+  }
+}
+
+# Combine results
+coloc_df <- bind_rows(coloc_results_list)
+
+cat("\nâœ… Co-localization indices calculated\n\n")
+
+# Visualization: Bar plot
+p4b_tcell <- ggplot(coloc_df, aes(x = sample, y = tcell_coloc_index * 100, fill = condition)) +
+  geom_bar(stat = "identity", color = "black") +
+  scale_fill_manual(values = condition_colors) +
+  theme_publication() +
+  labs(
+    title = "T Cells with Nearby Myeloid",
+    x = "Sample",
+    y = "Co-localization Index (%)",
+    fill = "Condition"
+  ) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+p4b_myeloid <- ggplot(coloc_df, aes(x = sample, y = myeloid_coloc_index * 100, fill = condition)) +
+  geom_bar(stat = "identity", color = "black") +
+  scale_fill_manual(values = condition_colors) +
+  theme_publication() +
+  labs(
+    title = "Myeloid Cells with Nearby T Cells",
+    x = "Sample",
+    y = "Co-localization Index (%)",
+    fill = "Condition"
+  ) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+p4b_combined <- p4b_tcell / p4b_myeloid +
+  plot_layout(guides = "collect") +
+  plot_annotation(
+    title = "Figure 4B: T Cell Ã— Myeloid Co-localization",
+    subtitle = sprintf("Co-localization threshold: %.4f pixels", coloc_threshold),
+    theme = theme(plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
+  )
+
+print(p4b_combined)
+
+# Save
+ggsave(
+  filename = file.path(output_dir, "Figure4/Figure4B_Colocalization_Index.png"),
+  plot = p4b_combined,
+  width = 10,
+  height = 10,
+  dpi = 300
+)
+
+ggsave(
+  filename = file.path(output_dir, "Figure4/Figure4B_Colocalization_Index.pdf"),
+  plot = p4b_combined,
+  width = 10,
+  height = 10
+)
+
+# Save statistics
+write.csv(
+  coloc_df,
+  file.path(output_dir, "Statistics/Figure4B_colocalization_indices.csv"),
+  row.names = FALSE
+)
+
+cat("âœ… Figure 4B created and saved\n\n")
+```
+
+## Figure 4C: Exhaustion-High T Ã— Myeloid-Activation-High Overlap
+```{r figure4c_overlap, fig.width=14, fig.height=10}
+cat("=== Creating Figure 4C: Exhaustion-High T Ã— Myeloid-Activation-High Overlap ===\n")
+
+# Signature scoreåˆ—ã‚’å®šç¾©
+exhaustion_col <- "T_cell_Exhaustion_1"
+myeloid_col <- "Myeloid_Activation_1"
+
+# åˆ—ã®å­˜åœ¨ç¢ºèª
+cat("Checking for required signature scores...\n")
+cat("  Looking for:", exhaustion_col, "...")
+if (exhaustion_col %in% colnames(cosmx@meta.data)) {
+  cat("âœ… Found\n")
+} else {
+  cat("âŒ Not found\n")
+}
+
+cat("  Looking for:", myeloid_col, "...")
+if (myeloid_col %in% colnames(cosmx@meta.data)) {
+  cat("âœ… Found\n")
+} else {
+  cat("âŒ Not found\n")
+}
+
+if (exhaustion_col %in% colnames(cosmx@meta.data) && 
+    myeloid_col %in% colnames(cosmx@meta.data)) {
+  
+  cat("\nâœ… Both signature scores found, proceeding with Figure 4C\n\n")
+  
+  # Define high-score cells (top 25%)
+  exhaustion_threshold <- quantile(tcells@meta.data[[exhaustion_col]], 0.9, na.rm = TRUE)
+  myeloid_threshold <- quantile(myeloid@meta.data[[myeloid_col]], 0.9, na.rm = TRUE)
+  
+  cat("Exhaustion threshold (90th percentile):", round(exhaustion_threshold, 3), "\n")
+  cat("Myeloid Activation threshold (90th percentile):", round(myeloid_threshold, 3), "\n\n")
+  
+  # Identify high-score cells
+  tcells$high_exhaustion <- tcells@meta.data[[exhaustion_col]] > exhaustion_threshold
+  myeloid$high_activation <- myeloid@meta.data[[myeloid_col]] > myeloid_threshold
+  
+  cat("High-exhaustion T cells:", sum(tcells$high_exhaustion, na.rm = TRUE), "\n")
+  cat("High-activation Myeloid cells:", sum(myeloid$high_activation, na.rm = TRUE), "\n\n")
+  
+  # Create spatial plots for each sample
+  p4c_list <- list()
+  
+  for (sample_id in unique(cosmx$sample)) {
+    cat("Plotting sample:", sample_id, "\n")
+    
+    # Subset cells
+    tcells_sample <- subset(tcells, subset = sample == sample_id)
+    myeloid_sample <- subset(myeloid, subset = sample == sample_id)
+    immune_sample <- subset(immune_cells, subset = sample == sample_id)
+    
+    # Get coordinates
+    tcells_high <- subset(tcells_sample, subset = high_exhaustion == TRUE)
+    myeloid_high <- subset(myeloid_sample, subset = high_activation == TRUE)
+    
+    # Prepare data for plotting
+    plot_data <- rbind(
+      data.frame(
+        x = immune_sample@meta.data[[x_col]],
+        y = immune_sample@meta.data[[y_col]],
+        cell_type = "Other Immune",
+        high_score = FALSE
+      ),
+      data.frame(
+        x = tcells_high@meta.data[[x_col]],
+        y = tcells_high@meta.data[[y_col]],
+        cell_type = "High Exhaustion T",
+        high_score = TRUE
+      ),
+      data.frame(
+        x = myeloid_high@meta.data[[x_col]],
+        y = myeloid_high@meta.data[[y_col]],
+        cell_type = "High Activation Myeloid",
+        high_score = TRUE
+      )
+    )
+    
+    # Create plot
+    p4c_sample <- ggplot(plot_data, aes(x = x, y = y, color = cell_type, size = high_score, alpha = high_score)) +
+      geom_point() +
+      scale_color_manual(
+        values = c(
+          "Other Immune" = "grey80",
+          "High Exhaustion T" = "#E41A1C",
+          "High Activation Myeloid" = "#4DAF4A"
+        )
+      ) +
+      scale_size_manual(values = c("FALSE" = 0.3, "TRUE" = 1.5), guide = "none") +
+      scale_alpha_manual(values = c("FALSE" = 0.3, "TRUE" = 1), guide = "none") +
+      theme_publication() +
+      theme(
+        aspect.ratio = 1,
+        legend.position = "bottom"
+      ) +
+      labs(
+        title = sample_id,
+        x = "X coordinate",
+        y = "Y coordinate",
+        color = "Cell Type"
+      ) +
+      guides(color = guide_legend(override.aes = list(size = 3, alpha = 1)))
+    
+    p4c_list[[sample_id]] <- p4c_sample
+  }
+  
+  # Combine plots
+p4c_combined <- wrap_plots(p4c_list, ncol = 2, guides = "collect") +
+  plot_annotation(
+    title = "Figure 4C: Spatial Co-localization of High-Score Cells",
+    subtitle = "Exhaustion-high T cells (red) Ã— Myeloid-Activation-high cells (green)",
+    theme = theme(plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
+  ) &
+  theme(legend.position = "bottom")
+  
+  print(p4c_combined)
+  
+  # Save
+  ggsave(
+    filename = file.path(output_dir, "Figure4/Figure4C_HighScore_Overlap.png"),
+    plot = p4c_combined,
+    width = 14,
+    height = 10,
+    dpi = 300
+  )
+  
+  ggsave(
+    filename = file.path(output_dir, "Figure4/Figure4C_HighScore_Overlap.pdf"),
+    plot = p4c_combined,
+    width = 14,
+    height = 10
+  )
+  
+  cat("âœ… Figure 4C created and saved\n\n")
+  
+} else {
+  cat("\nâš ï¸ Signature scores not found, skipping Figure 4C\n")
+  cat("Available score columns:\n")
+  print(grep("_1$|Score", colnames(cosmx@meta.data), value = TRUE))
+  cat("\n")
+}
+```
+
+## Figure 4D: Spatial Correlation (Ripley's K)
+
+```{r figure4d_ripley, fig.width=12, fig.height=8}
+cat("=== Creating Figure 4D: Spatial Correlation Analysis ===\n")
+
+# Ripley's K function analysis for each sample
+ripley_results_list <- list()
+
+for (sample_id in unique(cosmx$sample)) {
+  cat("\nProcessing sample:", sample_id, "\n")
+  
+  # Get T cells and Myeloid cells
+  tcells_sample <- subset(tcells, subset = sample == sample_id)
+  myeloid_sample <- subset(myeloid, subset = sample == sample_id)
+  
+  if (ncol(tcells_sample) >= 10 && ncol(myeloid_sample) >= 10) {
+    
+    # Extract coordinates
+    tcell_coords <- tcells_sample@meta.data[, c(x_col, y_col)]
+    myeloid_coords <- myeloid_sample@meta.data[, c(x_col, y_col)]
+    
+    # Create point patterns
+    # Define observation window
+    xrange <- range(c(tcell_coords[, 1], myeloid_coords[, 1]))
+    yrange <- range(c(tcell_coords[, 2], myeloid_coords[, 2]))
+    win <- owin(xrange = xrange, yrange = yrange)
+    
+    # Create marked point pattern
+    coords_all <- rbind(
+      data.frame(x = tcell_coords[, 1], y = tcell_coords[, 2], marks = "T_cell"),
+      data.frame(x = myeloid_coords[, 1], y = myeloid_coords[, 2], marks = "Myeloid")
+    )
+    
+    pp <- ppp(
+      x = coords_all$x,
+      y = coords_all$y,
+      marks = factor(coords_all$marks),
+      window = win
+    )
+    
+    # Calculate cross-type Ripley's K
+    tryCatch({
+      K_cross <- Kcross(pp, i = "T_cell", j = "Myeloid", correction = "border")
+      
+      # Extract results
+      ripley_results_list[[sample_id]] <- data.frame(
+        sample = sample_id,
+        condition = unique(tcells_sample$condition)[1],
+        r = K_cross$r,
+        K_obs = K_cross$border,
+        K_theo = K_cross$theo
+      )
+      
+      cat("  Ripley's K calculated\n")
+      
+    }, error = function(e) {
+      cat("  âš ï¸ Error calculating Ripley's K:", e$message, "\n")
+    })
+  }
+}
+
+# Combine results
+if (length(ripley_results_list) > 0) {
+  ripley_df <- bind_rows(ripley_results_list)
+  
+  cat("\nâœ… Ripley's K analysis completed\n\n")
+  
+  # Calculate L function (normalized K)
+  ripley_df$L_obs <- sqrt(ripley_df$K_obs / pi) - ripley_df$r
+  ripley_df$L_theo <- sqrt(ripley_df$K_theo / pi) - ripley_df$r
+  
+  # Visualization
+  p4d <- ggplot(ripley_df, aes(x = r, y = L_obs, color = sample)) +
+    geom_line(size = 1) +
+    geom_line(aes(y = L_theo), color = "black", linetype = "dashed", size = 0.5) +
+    scale_color_manual(values = sample_colors) +
+    facet_wrap(~ condition, ncol = 2) +
+    theme_publication() +
+    labs(
+      title = "Figure 4D: Spatial Correlation Analysis (Ripley's K)",
+      subtitle = "L(r) function: positive values indicate clustering at distance r",
+      x = "Distance (r)",
+      y = "L(r) - r",
+      color = "Sample"
+    ) +
+    geom_hline(yintercept = 0, linetype = "solid", color = "grey50") +
+    theme(legend.position = "bottom")
+  
+  print(p4d)
+  
+  # Save
+  ggsave(
+    filename = file.path(output_dir, "Figure4/Figure4D_Ripley_K.png"),
+    plot = p4d,
+    width = 12,
+    height = 8,
+    dpi = 300
+  )
+  
+  ggsave(
+    filename = file.path(output_dir, "Figure4/Figure4D_Ripley_K.pdf"),
+    plot = p4d,
+    width = 12,
+    height = 8
+  )
+  
+  # Save statistics
+  write.csv(
+    ripley_df,
+    file.path(output_dir, "Statistics/Figure4D_Ripley_K_results.csv"),
+    row.names = FALSE
+  )
+  
+  cat("âœ… Figure 4D created and saved\n\n")
+  
+} else {
+  cat("âš ï¸ Ripley's K analysis failed for all samples\n\n")
+}
+```
+
+## Figure 4 çµ±åˆç¢ºèª
+
+```{r figure4_summary}
+cat("=== Figure 4 Summary ===\n")
+
+cat("Figure 4 Components:\n")
+cat("  4A: Tâ†’Myeloid Nearest-Neighbor Distance âœ…\n")
+cat("  4B: Co-localization Index âœ…\n")
+cat("  4C: High-Score Cell Spatial Overlap âœ…\n")
+cat("  4D: Ripley's K Spatial Correlation âœ…\n\n")
+
+cat("Key Findings:\n")
+cat("  - Tç´°èƒžã¨éª¨é«„ç³»ç´°èƒžã®ç©ºé–“çš„è¿‘æŽ¥æ€§ã‚’å®šé‡åŒ–\n")
+cat("  - ICI-AKIç‰¹ç•°çš„ãªç›¸äº’ä½œç”¨ãƒ‘ã‚¿ãƒ¼ãƒ³ã®æ¤œå‡º\n")
+cat("  - Exhaustion-high Tç´°èƒžã¨Myeloid-Activation-highç´°èƒžã®å…±å±€åœ¨\n\n")
+
+cat("Message:\n")
+cat("  ICI-AKIã«ãŠã‘ã‚‹Tç´°èƒžã¨éª¨é«„ç³»ç´°èƒžã®\n")
+cat("  æ©Ÿèƒ½çš„ç©ºé–“çš„ç›¸äº’ä½œç”¨ã‚’å®Ÿè¨¼\n\n")
+```
+
+---
+
+# 5. ç·åˆã‚µãƒžãƒªãƒ¼ {.tabset .tabset-fade}
+
+## è§£æžå®Œäº†äº‹é …
+
+```{r analysis_summary}
+cat("=== ANALYSIS COMPLETION SUMMARY ===\n\n")
+
+cat("âœ… DATA LOADING\n")
+cat("  - scFFPE object:", ncol(scffpe), "cells\n")
+cat("  - CosMx object:", ncol(cosmx), "cells\n")
+cat("  - ICI signatures:", length(signatures), "signatures\n\n")
+
+cat("âœ… FIGURE 2: scFFPE SOURCE EVIDENCE\n")
+cat("  - 2B: UMAP visualization\n")
+cat("  - 2C: DEG heatmap\n")
+cat("  Purpose: scFFPEç”±æ¥ã‚·ã‚°ãƒãƒãƒ£ãƒ¼ã®ã‚½ãƒ¼ã‚¹ã‚¨ãƒ“ãƒ‡ãƒ³ã‚¹\n\n")
+
+cat("âœ… FIGURE 4: SPATIAL COUPLING ANALYSIS\n")
+cat("  - 4A: Nearest-neighbor distance\n")
+cat("  - 4B: Co-localization index\n")
+cat("  - 4C: High-score cell overlap\n")
+cat("  - 4D: Ripley's K correlation\n")
+cat("  Purpose: Tç´°èƒžÃ—éª¨é«„ç³»ç´°èƒžã®æ©Ÿèƒ½çš„ç›¸äº’ä½œç”¨\n\n")
+
+cat("âœ… OUTPUT FILES\n")
+cat("  - Figure2/: scFFPE visualizations\n")
+cat("  - Figure4/: Spatial coupling analyses\n")
+cat("  - Statistics/: All statistical results\n\n")
+```
+
+## è«–æ–‡ã‚¹ãƒˆãƒ¼ãƒªãƒ¼çµ±åˆ
+
+```{r story_integration}
+cat("=== MANUSCRIPT STORY INTEGRATION ===\n\n")
+
+cat("Figure 1: Study Design & Data Overview (å®Œæˆæ¸ˆã¿)\n")
+cat("  â†’ ãƒ‡ãƒ¼ã‚¿ã‚»ãƒƒãƒˆã®å…¨ä½“åƒ\n\n")
+
+cat("Figure 2: ICI-Specific Signatures (ä»Šå›žå®Œæˆ)\n")
+cat("  â†’ scFFPEç”±æ¥ã®ã‚·ã‚°ãƒãƒãƒ£ãƒ¼ç™ºè¦‹\n")
+cat("  â†’ CosMxã¸ã®æŠ•å½±æ¤œè¨¼\n")
+cat("  æ–°è¦ä½œæˆ: 2B (scFFPE UMAP), 2C (DEG heatmap)\n")
+cat("  æ—¢å­˜: 2D-2F (CosMx projection)\n\n")
+
+cat("Figure 3: Spatial Immune Architecture (å®Œæˆæ¸ˆã¿)\n")
+cat("  â†’ ICI-AKIç‰¹ç•°çš„ãªç©ºé–“ãƒ‘ã‚¿ãƒ¼ãƒ³\n\n")
+
+cat("Figure 4: T Cell Ã— Myeloid Coupling (ä»Šå›žå®Œæˆ)\n")
+cat("  â†’ ç´°èƒžé–“ç›¸äº’ä½œç”¨ã®å®šé‡åŒ–\n")
+cat("  â†’ ç”Ÿç‰©å­¦çš„æ„ç¾©ã®å®Ÿè¨¼\n\n")
+
+cat("çµ±åˆã•ã‚ŒãŸãƒ¡ãƒƒã‚»ãƒ¼ã‚¸:\n")
+cat("  1. scFFPEã§ICIç‰¹ç•°çš„ã‚·ã‚°ãƒãƒãƒ£ãƒ¼ç™ºè¦‹\n")
+cat("  2. CosMxç©ºé–“ãƒ‡ãƒ¼ã‚¿ã§æ¤œè¨¼\n")
+cat("  3. ç©ºé–“çš„å…ç–«ã‚¢ãƒ¼ã‚­ãƒ†ã‚¯ãƒãƒ£ã®ç‰¹å¾´ä»˜ã‘\n")
+cat("  4. æ©Ÿèƒ½çš„ç´°èƒžé–“ç›¸äº’ä½œç”¨ã®å®Ÿè¨¼\n\n")
+```
+
+## æ¬¡ã®ã‚¹ãƒ†ãƒƒãƒ—
+
+```{r next_steps_recommendation}
+cat("=== RECOMMENDED NEXT STEPS ===\n\n")
+
+cat("IMMEDIATE (è«–æ–‡å®Œæˆã«å¿…é ˆ):\n")
+cat("  1. Figure 3Cæ”¹å–„ (DBSCANãƒ‘ãƒ©ãƒ¡ãƒ¼ã‚¿èª¿æ•´)\n")
+cat("  2. Figure 3Eç½®æ› (ç›¸é–¢â†’å…±å±€åœ¨)\n")
+cat("  3. Figure 2Cåº§æ¨™è»¸çµ±ä¸€\n")
+cat("  4. å…¨Figureã®æœ€çµ‚èª¿æ•´ã¨çµ±ä¸€\n\n")
+
+cat("SHORT-TERM (1é€±é–“ä»¥å†…):\n")
+cat("  1. Supplementary Figuresä½œæˆ\n")
+cat("     - S1: Technical validation\n")
+cat("     - S2: Signature details\n")
+cat("     - S3: Spatial analysis methods\n")
+cat("  2. çµ±è¨ˆè§£æžã®è¿½åŠ æ¤œè¨¼\n")
+cat("  3. Figure legendsä½œæˆ\n\n")
+
+cat("MEDIUM-TERM (2-4é€±é–“):\n")
+cat("  1. Methods sectionåŸ·ç­†\n")
+cat("  2. Results sectionåŸ·ç­†\n")
+cat("  3. Discussion sectionåŸ·ç­†\n")
+cat("  4. Abstractä½œæˆ\n\n")
+
+cat("VALIDATION:\n")
+cat("  1. ä»–ã®ICI-AKIã‚³ãƒ›ãƒ¼ãƒˆã¨ã®æ¯”è¼ƒ\n")
+cat("  2. æ–‡çŒ®ã¨ã®æ•´åˆæ€§ç¢ºèª\n")
+cat("  3. çµ±è¨ˆçš„ãƒ­ãƒã‚¹ãƒˆãƒã‚¹æ¤œè¨¼\n\n")
+```
+
+## ã‚»ãƒƒã‚·ãƒ§ãƒ³æƒ…å ±
+
+```{r session_info}
+cat("=== SESSION INFORMATION ===\n")
+sessionInfo()
+```
+
+---
+
+# å®Œäº†
+
+**ã“ã®Rmdãƒ•ã‚¡ã‚¤ãƒ«ã§ä»¥ä¸‹ã‚’é”æˆ:**
+
+1. âœ… scFFPE Figure 2ãƒ‘ãƒãƒ« (2B, 2C) ã®ä½œæˆ
+2. âœ… CosMx Figure 4å…¨ãƒ‘ãƒãƒ« (4A-4D) ã®ä½œæˆ
+3. âœ… é©åˆ‡ãªãƒ•ã‚¡ã‚¤ãƒ«ãƒ‘ã‚¹ã¨ãƒ‡ãƒ¼ã‚¿æ§‹é€ ã®ä½¿ç”¨
+4. âœ… Claudeã¨ChatGPTã®ææ¡ˆã®çµ±åˆ
+5. âœ… è«–æ–‡ã¨ã—ã¦è«–ç†çš„ãªæ§‹æˆ
+
+**Output files:**
+- Figure2/Figure2B_scFFPE_UMAP.png/pdf
+- Figure2/Figure2C_scFFPE_DEG_heatmap.png/pdf
+- Figure4/Figure4A_NN_Distance.png/pdf
+- Figure4/Figure4B_Colocalization_Index.png/pdf
+- Figure4/Figure4C_HighScore_Overlap.png/pdf
+- Figure4/Figure4D_Ripley_K.png/pdf
+- Statistics/*.csv (all statistical results)
+
+**è«–æ–‡ã¸ã®çµ±åˆ:**
+ã“ã®Rmdã§ä½œæˆã•ã‚ŒãŸFigure 2ã¨Figure 4ã«ã‚ˆã‚Šã€
+scFFPEç”±æ¥ã‚·ã‚°ãƒãƒãƒ£ãƒ¼ã®ã‚½ãƒ¼ã‚¹ã‚¨ãƒ“ãƒ‡ãƒ³ã‚¹ã¨ã€
+ç©ºé–“çš„ç´°èƒžé–“ç›¸äº’ä½œç”¨ã®å®Ÿè¨¼ãŒå®Œæˆã—ã¾ã—ãŸã€‚

@@ -1,0 +1,673 @@
+---
+title: "CXCR3-CXCL9/10 Axis: High Magnification Spatial Images"
+author: "Hiroyuki Arai"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    code_folding: show
+    theme: cosmo
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE,
+  fig.width = 16,
+  fig.height = 12,
+  dpi = 600
+)
+```
+
+# Overview
+
+**目的**: CXCR3-CXCL9/10 chemokine axisの高倍率（強拡大）空間画像作成  
+**リクエスト**: PIからの要望 - 代表的領域の拡大画像で3群比較  
+**出力**: Representative high-magnification images (ICI-AKI, Rejection, Drug-induced AKI)
+
+---
+
+# 1. Setup & Library Loading
+
+```{r libraries}
+library(Seurat)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(patchwork)
+library(viridis)
+library(scales)
+
+# 明示的な関数定義
+select <- dplyr::select
+filter <- dplyr::filter
+mutate <- dplyr::mutate
+
+cat("✅ Libraries loaded\n")
+```
+
+## Theme & Colors
+
+```{r theme_colors}
+# Publication theme
+theme_publication <- function(base_size = 14) {
+  theme_bw(base_size = base_size) +
+    theme(
+      plot.title = element_text(size = base_size + 2, face = "bold", hjust = 0.5),
+      axis.title = element_text(size = base_size, face = "bold"),
+      axis.text = element_text(size = base_size - 2, color = "black"),
+      legend.title = element_text(size = base_size, face = "bold"),
+      legend.text = element_text(size = base_size - 2),
+      legend.background = element_rect(fill = "white", color = "black"),
+      panel.background = element_rect(fill = "white"),
+      panel.grid = element_blank(),
+      panel.border = element_rect(color = "black", fill = NA, size = 1.5),
+      plot.margin = margin(10, 10, 10, 10)
+    )
+}
+
+# Condition colors
+condition_colors <- c(
+  "ICI-AKI" = "#E41A1C",
+  "Rejection" = "#377EB8",
+  "Drug-induced_AKI" = "#4DAF4A"
+)
+
+cat("✅ Theme and colors defined\n")
+```
+
+---
+
+# 2. Data Loading
+
+```{r load_data}
+cat("=== Loading CosMx Data ===\n")
+
+# ベースディレクトリ
+base_dir <- "/Users/HiroyukiArai/Documents/2025年留学/研究関連/研究結果/202509 cosmx-kidney-project"
+
+# データファイル検索（既存解析と同じ方法）
+phase2_pattern <- "results/figures/.*CosMx_Signature_Projection.*"
+phase2_dirs <- list.dirs(base_dir, recursive = TRUE, full.names = TRUE)
+phase2_dirs <- phase2_dirs[grepl(phase2_pattern, phase2_dirs)]
+
+data_file <- NULL
+
+if(length(phase2_dirs) > 0) {
+  latest_dir <- phase2_dirs[length(phase2_dirs)]
+  rds_files <- list.files(latest_dir, pattern = "CosMx_with_signatures.*\\.rds$", 
+                          full.names = TRUE, recursive = TRUE)
+  if(length(rds_files) > 0) {
+    data_file <- rds_files[length(rds_files)]
+    cat("✅ Using Signature file:", basename(data_file), "\n")
+  }
+}
+
+if(is.null(data_file)) {
+  possible_paths <- c(
+    file.path(base_dir, "20251117_CosMx_comprehensive_annotation.rds"),
+    file.path(base_dir, "20251117_CosMx_SCT_nolabeltransfer_comprehensive_annotation.rds")
+  )
+  for(path in possible_paths) {
+    if(file.exists(path)) {
+      data_file <- path
+      cat("✅ Found annotation file:", basename(data_file), "\n")
+      break
+    }
+  }
+}
+
+if(is.null(data_file) || !file.exists(data_file)) {
+  stop("❌ CosMx data file not found!")
+}
+
+# データ読み込み
+cosmx <- readRDS(data_file)
+
+cat("✅ CosMx data loaded\n")
+cat("Total cells:", ncol(cosmx), "\n")
+cat("Total genes:", nrow(cosmx), "\n")
+```
+
+## Output Directory Setup
+
+```{r output_setup}
+timestamp <- format(Sys.time(), "%Y%m%d_%H%M%S")
+output_dir <- file.path(base_dir, 
+                        "results", 
+                        "figures", 
+                        paste0("HighMag_CXCR3_axis_", timestamp))
+
+dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+dir.create(file.path(output_dir, "HighMag_Images"), showWarnings = FALSE)
+dir.create(file.path(output_dir, "ROI_Selection"), showWarnings = FALSE)
+
+cat("✅ Output directory created:", output_dir, "\n")
+```
+
+---
+
+# 3. Gene & Coordinate Setup
+
+```{r gene_coordinate_setup}
+cat("=== Setting up Genes & Coordinates ===\n")
+
+# 対象遺伝子
+target_genes <- c("CXCR3", "CXCL9", "CXCL10")
+available_genes <- target_genes[target_genes %in% rownames(cosmx)]
+
+cat("Available genes:", paste(available_genes, collapse = ", "), "\n")
+
+# 座標列の検出
+coord_cols <- grep("^(x_|y_|X_|Y_)", colnames(cosmx@meta.data), value = TRUE)
+
+if ("x_global_px" %in% colnames(cosmx@meta.data)) {
+  x_coord <- "x_global_px"
+  y_coord <- "y_global_px"
+  cat("✅ Using x_global_px, y_global_px\n")
+} else if ("x_slide_mm" %in% colnames(cosmx@meta.data)) {
+  x_coord <- "x_slide_mm"
+  y_coord <- "y_slide_mm"
+  cat("✅ Using x_slide_mm, y_slide_mm\n")
+} else {
+  stop("❌ No coordinate columns found")
+}
+
+# SCT assay設定
+DefaultAssay(cosmx) <- "SCT"
+
+cat("✅ Setup completed\n")
+```
+
+---
+
+# 4. Sample-wise Data Overview
+
+```{r sample_overview}
+cat("=== Sample Overview ===\n")
+
+sample_info <- cosmx@meta.data %>%
+  dplyr::group_by(sample, condition) %>%
+  dplyr::summarise(
+    n_cells = n(),
+    x_min = min(!!sym(x_coord), na.rm = TRUE),
+    x_max = max(!!sym(x_coord), na.rm = TRUE),
+    y_min = min(!!sym(y_coord), na.rm = TRUE),
+    y_max = max(!!sym(y_coord), na.rm = TRUE),
+    x_range = x_max - x_min,
+    y_range = y_max - y_min,
+    .groups = "drop"
+  )
+
+print(sample_info)
+
+# サンプル選択
+selected_samples <- list(
+  "Rejection" = "S0",
+  "ICI-AIN_S1" = "S1",
+  "Drug-induced_AKI" = "S2",
+  "ICI-AIN_S3" = "S3"
+)
+
+cat("\n✅ Selected samples for high-mag images:\n")
+for(cond in names(selected_samples)) {
+  cat(sprintf("  %s: %s\n", cond, selected_samples[[cond]]))
+}
+```
+
+---
+
+# 5. Representative ROI Selection
+
+```{r roi_selection, fig.width=16, fig.height=12}
+cat("=== Selecting Representative Regions of Interest (ROI) ===\n\n")
+# ★★★ 修正版：細胞密度ベースのROI選択 + サイズ統一 ★★★
+
+# 統一ROIサイズ（物理単位）
+roi_width <- 1.0   # X方向の幅（座標単位）1.5~0.3の間で調整。
+roi_height <- 1.0  # Y方向の幅（座標単位）
+
+roi_list <- list()
+
+for(cond in names(selected_samples)) {
+  smp <- selected_samples[[cond]]
+  
+  sample_data <- cosmx@meta.data %>%
+    dplyr::filter(sample == smp)
+  
+  # サンプルの座標範囲取得
+  x_range <- range(sample_data[[x_coord]], na.rm = TRUE)
+  y_range <- range(sample_data[[y_coord]], na.rm = TRUE)
+  
+  # ★ 細胞密度の高い領域を探索
+  # 組織を10×10グリッドに分割して、各グリッドの細胞密度を計算
+  x_bins <- seq(x_range[1], x_range[2], length.out = 11)
+  y_bins <- seq(y_range[1], y_range[2], length.out = 11)
+  
+  # グリッド中心座標
+  x_centers <- (x_bins[-1] + x_bins[-length(x_bins)]) / 2
+  y_centers <- (y_bins[-1] + y_bins[-length(y_bins)]) / 2
+  
+  # 各グリッドの細胞密度を計算
+  max_density <- 0
+  best_x <- mean(x_range)
+  best_y <- mean(y_range)
+  
+  for(i in seq_along(x_centers)) {
+    for(j in seq_along(y_centers)) {
+      x_c <- x_centers[i]
+      y_c <- y_centers[j]
+      
+      # このグリッド内の細胞数をカウント
+      n_cells <- sum(
+        sample_data[[x_coord]] >= (x_c - roi_width/2) &
+        sample_data[[x_coord]] <= (x_c + roi_width/2) &
+        sample_data[[y_coord]] >= (y_c - roi_height/2) &
+        sample_data[[y_coord]] <= (y_c + roi_height/2)
+      )
+      
+      # 最も密度が高い領域を記録
+      if(n_cells > max_density) {
+        max_density <- n_cells
+        best_x <- x_c
+        best_y <- y_c
+      }
+    }
+  }
+  
+  # ★ ROI設定（統一サイズ、細胞密度が最大の位置）
+  roi_list[[smp]] <- list(
+    condition = cond,
+    x_min = best_x - roi_width / 2,
+    x_max = best_x + roi_width / 2,
+    y_min = best_y - roi_height / 2,
+    y_max = best_y + roi_height / 2,
+    n_cells = max_density
+  )
+  
+  cat(sprintf("%s (%s) ROI:\n", smp, cond))
+  cat(sprintf("  Center: (%.2f, %.2f)\n", best_x, best_y))
+  cat(sprintf("  Range: X[%.2f - %.2f], Y[%.2f - %.2f]\n", 
+              roi_list[[smp]]$x_min, roi_list[[smp]]$x_max,
+              roi_list[[smp]]$y_min, roi_list[[smp]]$y_max))
+  cat(sprintf("  Cells in ROI: %d\n", max_density))
+  cat(sprintf("  Size: %.2f × %.2f\n\n", roi_width, roi_height))
+}
+
+# ROI位置の可視化（全体像に矩形を重ねる）
+roi_overview_plots <- list()
+
+for(smp in names(roi_list)) {
+  sample_data <- cosmx@meta.data %>%
+    dplyr::filter(sample == smp) %>%
+    dplyr::select(x = !!sym(x_coord), y = !!sym(y_coord))
+  
+  # 全体を間引き表示
+  if(nrow(sample_data) > 50000) {
+    sample_data <- dplyr::slice_sample(sample_data, n = 50000)
+  }
+  
+  roi <- roi_list[[smp]]
+  
+  p <- ggplot(sample_data, aes(x = x, y = y)) +
+    geom_point(size = 0.1, color = "grey70", alpha = 0.3) +
+    # ROI矩形
+    geom_rect(
+      aes(xmin = roi$x_min, xmax = roi$x_max, 
+          ymin = roi$y_min, ymax = roi$y_max),
+      fill = NA, color = "red", size = 2
+    ) +
+    # ROI内の細胞数を表示
+    annotate(
+      "text",
+      x = (roi$x_min + roi$x_max) / 2,
+      y = roi$y_max + (max(sample_data$y) - min(sample_data$y)) * 0.05,
+      label = sprintf("%d cells", roi$n_cells),
+      color = "red",
+      size = 5,
+      fontface = "bold"
+    ) +
+    labs(
+      title = paste0(smp, " (", roi$condition, "): ROI Selection"),
+      subtitle = sprintf("ROI size: %.2f × %.2f", roi_width, roi_height),
+      x = "X coordinate",
+      y = "Y coordinate"
+    ) +
+    theme_publication() +
+    theme(aspect.ratio = 1)
+  
+  roi_overview_plots[[smp]] <- p
+}
+
+# ROI位置確認図を表示・保存
+roi_overview <- wrap_plots(roi_overview_plots, ncol = 3) +
+  plot_annotation(
+    title = "ROI Selection Overview (Density-based, Uniform Size)",
+    theme = theme(plot.title = element_text(size = 18, face = "bold", hjust = 0.5))
+  )
+
+print(roi_overview)
+
+ggsave(
+  filename = file.path(output_dir, "ROI_Selection", "ROI_selection_overview.pdf"),
+  plot = roi_overview,
+  width = 18,
+  height = 6
+)
+
+ggsave(
+  filename = file.path(output_dir, "ROI_Selection", "ROI_selection_overview.png"),
+  plot = roi_overview,
+  width = 18,
+  height = 6,
+  dpi = 300
+)
+
+cat("✅ ROI selection completed and saved\n")
+```
+---
+
+# 6. High Magnification Image Creation
+
+```{r highmag_images, fig.width=18, fig.height=18}
+cat("=== Creating High Magnification Images ===\n\n")
+
+# 遺伝子ごとの発現範囲を取得（カラースケール統一のため）
+gene_expr_ranges <- list()
+
+for(gene in available_genes) {
+  expr_values <- FetchData(cosmx, vars = gene) %>%
+    dplyr::filter(!!sym(gene) > 0) %>%
+    dplyr::pull(!!sym(gene))
+  
+  if(length(expr_values) > 0) {
+    gene_expr_ranges[[gene]] <- list(
+      min = 0,
+      max = max(expr_values, na.rm = TRUE)
+    )
+  } else {
+    gene_expr_ranges[[gene]] <- list(min = 0, max = 1)
+  }
+  
+  cat(sprintf("%s expression range: 0 - %.3f\n", gene, gene_expr_ranges[[gene]]$max))
+}
+
+# 高倍率画像作成
+highmag_plots <- list()
+
+for(gene in available_genes) {
+  gene_plots <- list()
+  
+  for(smp in names(roi_list)) {
+    roi <- roi_list[[smp]]
+    cond <- roi$condition
+    
+    cat(sprintf("\nCreating %s high-mag image for %s (%s)...\n", gene, smp, cond))
+    
+    # ROI内のデータ抽出
+    roi_data <- cosmx@meta.data %>%
+      dplyr::filter(
+        sample == smp,
+        !!sym(x_coord) >= roi$x_min,
+        !!sym(x_coord) <= roi$x_max,
+        !!sym(y_coord) >= roi$y_min,
+        !!sym(y_coord) <= roi$y_max
+      ) %>%
+      dplyr::select(x = !!sym(x_coord), y = !!sym(y_coord))
+    
+    # 発現データ追加
+    cell_ids <- rownames(cosmx@meta.data)[
+      cosmx@meta.data$sample == smp &
+      cosmx@meta.data[[x_coord]] >= roi$x_min &
+      cosmx@meta.data[[x_coord]] <= roi$x_max &
+      cosmx@meta.data[[y_coord]] >= roi$y_min &
+      cosmx@meta.data[[y_coord]] <= roi$y_max
+    ]
+    
+    expr_data <- FetchData(cosmx[, cell_ids], vars = gene)
+    roi_data$expr <- expr_data[[gene]]
+    
+    # 背景（全細胞）と前景（発現細胞）に分ける
+    bg_data <- roi_data
+    fg_data <- roi_data %>% dplyr::filter(expr > 0)
+    
+    n_total <- nrow(roi_data)
+    n_positive <- nrow(fg_data)
+    pct_positive <- round(n_positive / n_total * 100, 1)
+    
+    cat(sprintf("  Cells in ROI: %d (%.1f%% positive)\n", n_total, pct_positive))
+    
+    # プロット作成
+    p <- ggplot() +
+      # 背景：全細胞（薄いグレー）
+      geom_point(
+        data = bg_data,
+        aes(x = x, y = y),
+        color = "grey85",
+        size = 1.2,      # 高倍率なので点を大きく
+        alpha = 0.4
+      ) +
+      # 前景：発現細胞（カラー）
+      geom_point(
+        data = fg_data,
+        aes(x = x, y = y, color = expr),
+        size = 1.8,      # 発現細胞をさらに大きく
+        alpha = 0.95
+      ) +
+      scale_color_viridis_c(
+        option = "magma",
+        name = "Expression",
+        limits = c(gene_expr_ranges[[gene]]$min, gene_expr_ranges[[gene]]$max),
+        na.value = "grey80"
+      ) +
+      scale_x_continuous(limits = c(roi$x_min, roi$x_max), expand = c(0.02, 0.02)) +
+      scale_y_continuous(limits = c(roi$y_min, roi$y_max), expand = c(0.02, 0.02)) +
+      labs(
+        title = paste0(smp, " (", cond, ")"),
+        subtitle = sprintf("%d cells (%.1f%% positive)", n_total, pct_positive),
+        x = NULL,
+        y = NULL
+      ) +
+      theme_publication() +
+      theme(
+        aspect.ratio = 1,
+        legend.position = "right",
+        panel.background = element_rect(fill = "white", color = "black"),
+        axis.text = element_text(size = 10)
+      )
+    
+    gene_plots[[smp]] <- p
+  }
+  
+# 遺伝子ごとのパネル統合
+  gene_panel <- wrap_plots(gene_plots, ncol = 4) +  # 3 → 4 に変更
+    plot_annotation(
+      title = paste0(gene, " High Magnification Spatial Expression"),
+      theme = theme(plot.title = element_text(size = 20, face = "bold", hjust = 0.5))
+    )
+  
+  highmag_plots[[gene]] <- gene_panel
+  
+  # 保存
+  ggsave(
+    filename = file.path(output_dir, "HighMag_Images", paste0("HighMag_", gene, ".pdf")),
+    plot = gene_panel,
+    width = 24,  # 18 → 24 に変更（4列分の幅）
+    height = 6
+  )
+  
+  ggsave(
+    filename = file.path(output_dir, "HighMag_Images", paste0("HighMag_", gene, ".png")),
+    plot = gene_panel,
+    width = 24,  # 18 → 24 に変更（4列分の幅）
+    height = 6,
+    dpi = 600  # 高解像度
+  )
+  
+  cat(sprintf("✅ %s high-mag images saved\n", gene))
+}
+
+# 全遺伝子の最初の画像を表示
+print(highmag_plots[[1]])
+```
+
+---
+
+# 7. Combined 3-Gene Panel (Optional)
+
+```{r combined_panel, fig.width=18, fig.height=18}
+cat("=== Creating Combined 3-Gene × 3-Condition Panel ===\n")
+
+# サンプル順序の定義
+sample_order <- names(roi_list)
+cond_order <- sapply(roi_list, function(x) x$condition)
+
+# 3遺伝子 × 4サンプル = 12パネルの統合図  # 9 → 12 に変更
+# 行: 遺伝子, 列: 条件
+
+combined_plots <- list()
+
+for(gene in available_genes) {
+  for(smp in names(roi_list)) {
+    roi <- roi_list[[smp]]
+    cond <- roi$condition
+    
+    # ROI内データ抽出（上記と同じ）
+    cell_ids <- rownames(cosmx@meta.data)[
+      cosmx@meta.data$sample == smp &
+      cosmx@meta.data[[x_coord]] >= roi$x_min &
+      cosmx@meta.data[[x_coord]] <= roi$x_max &
+      cosmx@meta.data[[y_coord]] >= roi$y_min &
+      cosmx@meta.data[[y_coord]] <= roi$y_max
+    ]
+    
+    roi_data <- cosmx@meta.data[cell_ids, ] %>%
+      dplyr::select(x = !!sym(x_coord), y = !!sym(y_coord))
+    
+    expr_data <- FetchData(cosmx[, cell_ids], vars = gene)
+    roi_data$expr <- expr_data[[gene]]
+    
+    bg_data <- roi_data
+    fg_data <- roi_data %>% dplyr::filter(expr > 0)
+    
+    # 簡易プロット（タイトルなし、凡例右）
+    p <- ggplot() +
+      geom_point(data = bg_data, aes(x = x, y = y),
+                 color = "grey85", size = 0.8, alpha = 0.3) +
+      geom_point(data = fg_data, aes(x = x, y = y, color = expr),
+                 size = 1.2, alpha = 0.9) +
+      scale_color_viridis_c(
+        option = "magma",
+        limits = c(0, gene_expr_ranges[[gene]]$max),
+        na.value = "grey80"
+      ) +
+      scale_x_continuous(limits = c(roi$x_min, roi$x_max), expand = c(0.02, 0.02)) +
+      scale_y_continuous(limits = c(roi$y_min, roi$y_max), expand = c(0.02, 0.02)) +
+      labs(x = NULL, y = NULL) +
+      theme_publication() +
+      theme(
+        aspect.ratio = 1,
+        legend.position = "none",
+        axis.text = element_blank(),
+        axis.ticks = element_blank()
+      )
+    
+    plot_name <- paste0(gene, "_", smp)
+    combined_plots[[plot_name]] <- p
+  }
+}
+
+# レイアウト：3行（遺伝子） × 3列（条件）
+layout_design <- "
+AEI
+BFJ
+CGK
+DHL
+"
+
+combined_figure <- wrap_plots(
+  combined_plots[[paste0(available_genes[1], "_", sample_order[1])]],
+  combined_plots[[paste0(available_genes[1], "_", sample_order[2])]],
+  combined_plots[[paste0(available_genes[1], "_", sample_order[3])]],
+  combined_plots[[paste0(available_genes[1], "_", sample_order[4])]],  # 追加
+  combined_plots[[paste0(available_genes[2], "_", sample_order[1])]],
+  combined_plots[[paste0(available_genes[2], "_", sample_order[2])]],
+  combined_plots[[paste0(available_genes[2], "_", sample_order[3])]],
+  combined_plots[[paste0(available_genes[2], "_", sample_order[4])]],  # 追加
+  combined_plots[[paste0(available_genes[3], "_", sample_order[1])]],
+  combined_plots[[paste0(available_genes[3], "_", sample_order[2])]],
+  combined_plots[[paste0(available_genes[3], "_", sample_order[3])]],
+  combined_plots[[paste0(available_genes[3], "_", sample_order[4])]],  # 追加
+  design = layout_design
+) +
+  plot_annotation(
+    title = "CXCR3-CXCL9/10 Axis: High Magnification Spatial Expression",
+    subtitle = paste0(
+      "Rows: Genes | Columns: ",
+      paste(paste0(cond_order, " (", sample_order, ")"), collapse = ", ")
+    ),
+    theme = theme(
+      plot.title = element_text(size = 22, face = "bold", hjust = 0.5),
+      plot.subtitle = element_text(size = 16, hjust = 0.5)
+    )
+  )
+
+print(combined_figure)
+
+ggsave(
+  filename = file.path(output_dir, "HighMag_Images", "Combined_3x4_HighMag.pdf"),  # 3x3 → 3x4
+  plot = combined_figure,
+  width = 24,  # 18 → 24 に変更（4列分の幅）
+  height = 18
+)
+
+ggsave(
+  filename = file.path(output_dir, "HighMag_Images", "Combined_3x4_HighMag.png"),  # 3x3 → 3x4
+  plot = combined_figure,
+  width = 24,  # 18 → 24 に変更（4列分の幅）
+  height = 18,
+  dpi = 600
+)
+
+cat("✅ Combined 3×34 anel saved\n")
+```
+
+---
+
+# 8. Summary
+
+```{r summary}
+cat("\n", strrep("=", 80), "\n")
+cat("HIGH MAGNIFICATION IMAGE CREATION COMPLETE\n")
+cat(strrep("=", 80), "\n\n")
+
+cat("📊 Summary:\n")
+cat(sprintf("  Genes analyzed: %s\n", paste(available_genes, collapse = ", ")))
+cat(sprintf("  Samples: %s\n", paste(names(roi_list), collapse = ", ")))
+cat(sprintf("  Output directory: %s\n", output_dir))
+
+cat("\n📁 Output files:\n")
+cat("  1. ROI_Selection/\n")
+cat("     - ROI_selection_overview.pdf/png (ROI位置確認図)\n")
+cat("\n  2. HighMag_Images/\n")
+for(gene in available_genes) {
+  cat(sprintf("     - HighMag_%s.pdf/png (3条件比較)\n", gene))
+}
+cat("     - Combined_3x3_HighMag.pdf/png (全体統合図)\n")
+
+cat("\n💡 Next steps:\n")
+cat("  1. ROI位置を確認し、必要に応じて手動調整\n")
+cat("  2. 高倍率画像の品質を確認\n")
+cat("  3. 論文用Figureとして使用\n")
+
+cat("\n", strrep("=", 80), "\n")
+cat("✅ Analysis completed:", Sys.time(), "\n")
+cat(strrep("=", 80), "\n\n")
+```
+
+---
+
+**Analysis completed**: `r Sys.time()`

@@ -1,0 +1,1240 @@
+---
+title: "scFFPE Figure 2 & CosMx Figure 4: ICI-AKI Signature Discovery and Spatial Coupling"
+author: "Kidney ICI-AKI Research Project"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 4
+    code_folding: show
+    theme: cosmo
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  fig.width = 12,
+  fig.height = 8,
+  dpi = 300
+)
+```
+
+# ãƒ—ãƒ­ã‚¸ã‚§ã‚¯ãƒˆæ¦‚è¦
+
+## ç›®çš„
+1. **scFFPE Figure 2**: ICIç‰¹ç•°çš„ã‚·ã‚°ãƒãƒãƒ£ãƒ¼ã®ã‚½ãƒ¼ã‚¹ã‚¨ãƒ“ãƒ‡ãƒ³ã‚¹ã‚’ç¤ºã™
+   - 2A: Workflow schematicï¼ˆæ‰‹å‹•ä½œæˆæ¸ˆã¿ï¼‰
+   - 2B: scFFPE UMAP (ä¸»è¦ç´°èƒžã‚¿ã‚¤ãƒ—ã¨ã‚·ã‚°ãƒãƒãƒ£ãƒ¼éºä¼å­)
+   - 2C: scFFPE DEG heatmap
+   
+2. **CosMx Figure 4**: Tç´°èƒžÃ—éª¨é«„ç³»ç´°èƒžã®ç©ºé–“çš„ç›¸äº’ä½œç”¨
+   - 4A: Nearest-neighbor Tâ†’Myeloid distance
+   - 4B: Co-localization index
+   - 4C: Exhaustion-high T cells Ã— Myeloid-Activation-high overlap
+   - 4D: Spatial correlation (Ripley's K or radial density)
+
+## ãƒ‡ãƒ¼ã‚¿æ§‹é€ 
+- **scFFPE**: `/Users/HiroyukiArai/Documents/å¤§å­¦é™¢/ç ”ç©¶çµæžœ/2024æ‘ä¸Šå…ˆç”ŸCosMX/202406 single cell FFPE data/scFFPE_kidney_analysis/results/scffpe_additional_analysis_complete_doublet_removed.rds`
+- **CosMx**: `/Users/HiroyukiArai/Documents/å¤§å­¦é™¢/ç ”ç©¶çµæžœ/2024æ‘ä¸Šå…ˆç”ŸCosMX/20251117_CosMx_SCT_nolabeltransfer_comprehensive_annotation.rds`
+- **Signatures**: `ICI_signature_candidates_for_CosMx.rds`
+
+---
+
+# 1. ç’°å¢ƒæº–å‚™ {.tabset .tabset-fade}
+
+## ãƒ©ã‚¤ãƒ–ãƒ©ãƒªèª­ã¿è¾¼ã¿
+
+```{r load_libraries}
+cat("=== Loading Required Libraries ===\n")
+
+suppressPackageStartupMessages({
+  # Core
+  library(Seurat)
+  library(SeuratObject)
+  library(dplyr)
+  library(tidyr)
+  library(tibble)
+  
+  # Visualization
+  library(ggplot2)
+  library(patchwork)
+  library(viridis)
+  library(RColorBrewer)
+  library(pheatmap)
+  library(ggrepel)
+  
+  # Spatial analysis
+  library(spatstat)
+  library(dbscan)
+  
+  # Statistics
+  library(ggpubr)
+  library(rstatix)
+  
+  # Data handling
+  library(readxl)
+  library(DT)
+  library(kableExtra)
+})
+
+cat("âœ… All libraries loaded\n")
+cat("Seurat version:", as.character(packageVersion("Seurat")), "\n")
+cat("R version:", R.version.string, "\n\n")
+```
+
+## ãƒ‡ã‚£ãƒ¬ã‚¯ãƒˆãƒªè¨­å®š
+
+```{r setup_directories}
+cat("=== Setting up Directories ===\n")
+
+# 2ã¤ã®å¯èƒ½æ€§ã®ã‚ã‚‹ãƒ™ãƒ¼ã‚¹ãƒ‡ã‚£ãƒ¬ã‚¯ãƒˆãƒªã‚’è©¦è¡Œ
+base_dir_options <- c(
+  "/Users/HiroyukiArai/Documents/2025å¹´ç•™å­¦/ç ”ç©¶é–¢é€£/ç ”ç©¶çµæžœ/202509 cosmx-kidney-project",
+  "/Users/HiroyukiArai/Documents/å¤§å­¦é™¢/ç ”ç©¶çµæžœ/2024æ‘ä¸Šå…ˆç”ŸCosMX"
+)
+
+base_dir <- NULL
+for (dir in base_dir_options) {
+  if (dir.exists(dir)) {
+    base_dir <- dir
+    break
+  }
+}
+
+if (is.null(base_dir)) {
+  stop("âŒ Base directory not found. Please check the path.")
+}
+
+cat("âœ… Using base directory:", base_dir, "\n")
+
+# scFFPE directory
+scffpe_base <- "/Users/HiroyukiArai/Documents/å¤§å­¦é™¢/ç ”ç©¶çµæžœ/2024æ‘ä¸Šå…ˆç”ŸCosMX/202406 single cell FFPE data/scFFPE_kidney_analysis"
+scffpe_data_dir <- file.path(scffpe_base, "results")
+scffpe_deg_dir <- file.path(scffpe_base, "results/DEG_analysis")
+
+# CosMx directory
+cosmx_data_dir <- base_dir
+
+# Output directory - timestamped
+timestamp <- format(Sys.time(), "%Y%m%d_%H%M%S")
+output_dir <- file.path(base_dir, "results/figures", 
+                        paste0("20251203_Figure2(scFFPE_heatmap)", timestamp))
+dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+
+# Create subdirectories
+dir.create(file.path(output_dir, "Figure2"), showWarnings = FALSE)
+dir.create(file.path(output_dir, "Statistics"), showWarnings = FALSE)
+dir.create(file.path(output_dir, "Additional"), showWarnings = FALSE)
+cat("\nDirectory structure:\n")
+cat("  scFFPE data:", scffpe_data_dir, "\n")
+cat("  scFFPE DEG:", scffpe_deg_dir, "\n")
+cat("  CosMx data:", cosmx_data_dir, "\n")
+cat("  Output:", output_dir, "\n\n")
+```
+
+## ã‚«ãƒ©ãƒ¼ãƒ‘ãƒ¬ãƒƒãƒˆå®šç¾©
+
+```{r define_colors}
+cat("=== Defining Color Palettes ===\n")
+
+# Condition colors
+condition_colors <- c(
+  "ICI-AKI" = "#E41A1C",
+  "ICI_AKI" = "#E41A1C",
+  "Rejection" = "#377EB8",
+  "Drug-induced_AKI" = "#4DAF4A",
+  "Drug_AKI" = "#4DAF4A"
+)
+
+# Sample colors
+sample_colors <- c(
+  "S0" = "#377EB8",
+  "S1" = "#E41A1C",
+  "S2" = "#4DAF4A",
+  "S3" = "#984EA3"
+)
+
+# Major cell type colors
+major_celltype_colors <- c(
+  "Epithelial" = "#E41A1C",
+  "Tubular_cells" = "#E41A1C",
+  "Endothelial" = "#377EB8",
+  "Immune" = "#4DAF4A",
+  "Immune_cells" = "#4DAF4A",
+  "Stromal" = "#984EA3",
+  "Stromal_cells" = "#984EA3",
+  "Other" = "#999999"
+)
+
+# Immune cell type colors
+immune_colors <- c(
+  "CD4_T_cell" = "#E41A1C",
+  "CD8_T_cell" = "#377EB8",
+  "DP_T_cell" = "#4DAF4A",
+  "T_cell" = "#984EA3",
+  "Treg" = "#FF7F00",
+  "B_cell" = "#FFFF33",
+  "Macrophage" = "#A65628",
+  "Dendritic_cell" = "#F781BF",
+  "NK_cell" = "#999999"
+)
+
+cat("âœ… Color palettes defined\n\n")
+```
+
+## è«–æ–‡ç”¨ãƒ†ãƒ¼ãƒž
+
+```{r plot_theme}
+cat("=== Defining Publication Theme ===\n")
+
+# Base theme for all plots
+theme_publication <- function(base_size = 12) {
+  theme_bw(base_size = base_size) +
+    theme(
+      # Text
+      plot.title = element_text(size = base_size + 2, face = "bold", hjust = 0.5),
+      plot.subtitle = element_text(size = base_size, hjust = 0.5),
+      axis.title = element_text(size = base_size, face = "bold"),
+      axis.text = element_text(size = base_size - 1, color = "black"),
+      
+      # Legend
+      legend.title = element_text(size = base_size, face = "bold"),
+      legend.text = element_text(size = base_size - 1),
+      legend.background = element_rect(fill = "white", color = "black"),
+      legend.key.size = unit(0.5, "cm"),
+      
+      # Panel
+      panel.background = element_rect(fill = "white"),
+      panel.grid.major = element_line(color = "grey90", size = 0.3),
+      panel.grid.minor = element_blank(),
+      panel.border = element_rect(color = "black", fill = NA, size = 1),
+      
+      # Strip (facet labels)
+      strip.background = element_rect(fill = "grey90", color = "black"),
+      strip.text = element_text(size = base_size, face = "bold"),
+      
+      # Margins
+      plot.margin = margin(10, 10, 10, 10)
+    )
+}
+
+cat("âœ… Publication theme defined\n\n")
+```
+
+---
+
+# 2. ãƒ‡ãƒ¼ã‚¿èª­ã¿è¾¼ã¿ {.tabset .tabset-fade}
+
+## scFFPEãƒ‡ãƒ¼ã‚¿èª­ã¿è¾¼ã¿
+
+```{r load_scffpe}
+cat("=== Loading scFFPE Data ===\n")
+
+scffpe_file <- file.path(scffpe_data_dir, "scffpe_additional_analysis_complete_doublet_removed.rds")
+
+if (!file.exists(scffpe_file)) {
+  stop("âŒ scFFPE file not found: ", scffpe_file)
+}
+
+cat("Loading scFFPE object...\n")
+scffpe <- readRDS(scffpe_file)
+
+cat("âœ… scFFPE data loaded\n")
+cat("Total cells:", ncol(scffpe), "\n")
+cat("Total genes:", nrow(scffpe), "\n")
+cat("Assays:", names(scffpe@assays), "\n")
+
+# Check metadata
+cat("\nAvailable metadata columns:\n")
+print(colnames(scffpe@meta.data))
+
+# Create group column if not exists
+if (!"group" %in% colnames(scffpe@meta.data)) {
+  cat("\nCreating 'group' column...\n")
+  
+  # Check sample column name
+  sample_col <- if ("sample" %in% colnames(scffpe@meta.data)) {
+    "sample"
+  } else if ("orig.ident" %in% colnames(scffpe@meta.data)) {
+    "orig.ident"
+  } else {
+    stop("Cannot find sample information column")
+  }
+  
+  # Create group
+  scffpe$group <- case_when(
+    grepl("S0", scffpe@meta.data[[sample_col]]) ~ "Rejection",
+    grepl("S1|S3", scffpe@meta.data[[sample_col]]) ~ "ICI_AKI",
+    grepl("S2", scffpe@meta.data[[sample_col]]) ~ "Drug_AKI",
+    TRUE ~ "Unknown"
+  )
+  
+  cat("âœ… 'group' column created\n")
+  print(table(scffpe$group))
+}
+
+cat("\n")
+```
+
+## CosMxãƒ‡ãƒ¼ã‚¿èª­ã¿è¾¼ã¿
+```{r load_cosmx}
+cat("=== Loading CosMx Data ===\n")
+
+# ã‚·ã‚°ãƒãƒãƒ£ãƒ¼ã‚¹ã‚³ã‚¢ä»˜ãCosMxãƒ•ã‚¡ã‚¤ãƒ«ï¼ˆFigure 3ã¨åŒã˜ï¼‰
+cosmx_file <- "/Users/HiroyukiArai/Documents/2025å¹´ç•™å­¦/ç ”ç©¶é–¢é€£/ç ”ç©¶çµæžœ/202509 cosmx-kidney-project/results/figures/20251120_CosMx_Signature_Projection_20251120_175233/CosMx_with_signatures_20251120_175944.rds"
+
+if (!file.exists(cosmx_file)) {
+  stop("âŒ CosMx file not found: ", cosmx_file)
+}
+
+cat("Loading CosMx object from:", basename(cosmx_file), "\n")
+cosmx <- readRDS(cosmx_file)
+
+cat("âœ… CosMx data loaded\n")
+cat("Total cells:", ncol(cosmx), "\n")
+cat("Total genes:", nrow(cosmx), "\n")
+cat("Samples:", paste(unique(cosmx$sample), collapse = ", "), "\n")
+
+# Check metadata
+cat("\nAvailable metadata columns:\n")
+print(colnames(cosmx@meta.data))
+
+# Check for signature scores
+sig_cols <- grep("_1$", colnames(cosmx@meta.data), value = TRUE)
+cat("\n=== Signature Scores Available ===\n")
+print(sig_cols)
+
+# Check for spatial coordinates
+if ("x_slide_mm" %in% colnames(cosmx@meta.data)) {
+  cat("\nâœ… Using x_slide_mm, y_slide_mm (global slide coordinates)\n")
+  x_col <- "x_slide_mm"
+  y_col <- "y_slide_mm"
+} else if ("x_global_px" %in% colnames(cosmx@meta.data)) {
+  cat("âœ… Using x_global_px, y_global_px\n")
+  x_col <- "x_global_px"
+  y_col <- "y_global_px"
+} else if ("x_FOV_px" %in% colnames(cosmx@meta.data)) {
+  cat("âš ï¸ Using x_FOV_px, y_FOV_px (FOV-level coordinates)\n")
+  x_col <- "x_FOV_px"
+  y_col <- "y_FOV_px"
+} else {
+  stop("âŒ No coordinate columns found")
+}
+
+cat("\n")
+```
+
+## Signatureèª­ã¿è¾¼ã¿
+
+```{r load_signatures}
+cat("=== Loading ICI Signatures ===\n")
+
+signature_file <- file.path(scffpe_deg_dir, "ICI_signature_candidates_for_CosMx.rds")
+
+if (!file.exists(signature_file)) {
+  stop("âŒ Signature file not found: ", signature_file)
+}
+
+signatures <- readRDS(signature_file)
+
+cat("âœ… Signatures loaded\n")
+cat("Number of signatures:", length(signatures), "\n")
+cat("\nSignature names:\n")
+for (i in seq_along(signatures)) {
+  sig_name <- names(signatures)[i]
+  sig_genes <- signatures[[i]]
+  cat(sprintf("  %2d. %-30s: %2d genes\n", i, sig_name, length(sig_genes)))
+}
+
+cat("\n")
+```
+
+## DEGçµæžœèª­ã¿è¾¼ã¿
+
+```{r load_deg_results}
+cat("=== Loading DEG Results ===\n")
+
+# ICI-specific genes
+ici_specific_file <- file.path(scffpe_deg_dir, "ICI_specific_genes_all_cells.csv")
+
+if (file.exists(ici_specific_file)) {
+  ici_specific_genes <- read.csv(ici_specific_file)
+  cat("âœ… ICI-specific genes loaded:", nrow(ici_specific_genes), "genes\n")
+} else {
+  cat("âš ï¸ ICI-specific genes file not found\n")
+  ici_specific_genes <- NULL
+}
+
+# Cell type-specific DEGs
+celltype_deg_file <- file.path(scffpe_deg_dir, "All_celltype_specific_DEGs.csv")
+
+if (file.exists(celltype_deg_file)) {
+  celltype_degs <- read.csv(celltype_deg_file)
+  cat("âœ… Cell type-specific DEGs loaded:", nrow(celltype_degs), "entries\n")
+} else {
+  cat("âš ï¸ Cell type-specific DEG file not found\n")
+  celltype_degs <- NULL
+}
+
+cat("\n")
+```
+
+---
+
+# 3. Figure 2: scFFPE Signature Source Evidence {.tabset .tabset-fade}
+
+
+
+## Figure 2C: ICI Signature Expression by Cell Type (Cell Type-grouped)
+```{r figure2c_signature_heatmap_celltype_grouped, fig.width=12, fig.height=8}
+cat("=== Creating Figure 2C: Cell Type-grouped Heatmap ===\n")
+
+if (!is.null(ici_specific_genes)) {
+
+## ---- STEP 1: Gene selection (å®Ÿéš›ã®Signatureã«åŸºã¥ã) ----
+
+cat("\n=== Gene Selection Based on Actual CosMx Signatures ===\n")
+
+# CosMxãƒ‘ãƒãƒ«éºä¼å­ã®å®šç¾©
+if (exists("signatures") && !is.null(signatures)) {
+  cosmx_panel_genes <- unique(unlist(signatures))
+  cat("CosMx panel genes available:", length(cosmx_panel_genes), "\n")
+} else {
+  cosmx_panel_genes <- rownames(scffpe)
+}
+
+# å®Ÿéš›ã«ä½¿ç”¨ã—ãŸSignatureå®šç¾©ï¼ˆCosMxæ­è¼‰éºä¼å­ã®ã¿ï¼‰
+gene_categories <- list(
+  # T cell Exhaustionï¼ˆå®Ÿéš›ã®Signatureï¼‰
+  "T_cell_Exhaustion" = c("ENTPD1", "CTLA4", "TIGIT"),
+  
+  # Inflammatory Chemokineï¼ˆå®Ÿéš›ã®Signatureï¼‰
+  "Inflammatory_Chemokine" = c("CXCL12", "CXCL14", "IL17RB"),
+  
+  # Myeloid Activationï¼ˆå®Ÿéš›ã®Signatureï¼‰
+  "Myeloid_Activation" = c("S100A9", "GPX3", "CD36", "VCAN", "G0S2", 
+                           "CXCL14", "LTF", "SPP1", "FOS", "VEGFA"),
+  
+  # T cell Activationï¼ˆå®Ÿéš›ã®Signatureï¼‰
+  "T_cell_Activation" = c("GPX3", "SPP1", "ENTPD1", "CRYAB", "TNFRSF4", 
+                          "SERPINA1", "CTLA4", "TNFRSF18", "LTB", "EZH2"),
+  
+  # Tubular Injuryï¼ˆå®Ÿéš›ã®Signatureï¼‰
+  "Tubular_Injury" = c("EGF", "GPX3", "PROX1", "G0S2", "MT1X", 
+                       "DDC", "AZGP1", "APOE", "VEGFA", "LTF"),
+  
+  # Endothelial Activationï¼ˆå®Ÿéš›ã®Signatureï¼‰
+  "Endothelial_Activation" = c("GPX3", "MT1X", "FOXF1", "FGFR3", "IGFBP5",
+                                "SNAI2", "CEACAM1", "MRC2", "CXCL14", "SPP1"),
+  
+  # Stromal Activationï¼ˆå®Ÿéš›ã®Signatureï¼‰
+  "Stromal_Activation" = c("GPX3", "CXCL14", "BMP5", "SPP1", "LDLR",
+                           "CCL21", "G0S2", "TNFSF15", "VCAN", "FZD8"),
+  
+  # B/Plasma Activationï¼ˆå®Ÿéš›ã®Signatureï¼‰
+  "B_Plasma_Activation" = c("GPX3", "MT1X", "CXCL14", "SPP1", "CRYAB",
+                            "ADGRG1", "APOE", "VEGFA"),
+  
+  # Tissue Damageï¼ˆå®Ÿéš›ã®Signatureï¼‰
+  "Tissue_Damage" = c("CXCL14", "SPP1", "VEGFA", "MT1X")
+)
+
+cat("\nSignature categories defined:\n")
+for (cat_name in names(gene_categories)) {
+  cat("  ", cat_name, ":", length(gene_categories[[cat_name]]), "genes\n")
+}
+
+# ICIç‰¹ç•°çš„ & scFFPEã§åˆ©ç”¨å¯èƒ½ & æ­£ã®log2FC
+ici_available_genes <- ici_specific_genes %>%
+  dplyr::filter(gene %in% rownames(scffpe)) %>%
+  dplyr::filter(mean_log2FC > 0)
+
+cat("\nICI-specific genes with positive log2FC:", nrow(ici_available_genes), "\n")
+
+# å„ã‚«ãƒ†ã‚´ãƒªã‹ã‚‰éºä¼å­ã‚’é¸æŠž
+selected_genes <- list()
+
+for (cat_name in names(gene_categories)) {
+  cat_genes <- gene_categories[[cat_name]]
+  
+  # ã“ã®ã‚«ãƒ†ã‚´ãƒªã®éºä¼å­ã§ã€ICIç‰¹ç•°çš„ & æ­£ã®log2FC & scFFPEã§åˆ©ç”¨å¯èƒ½
+  available <- ici_available_genes %>%
+    dplyr::filter(gene %in% cat_genes) %>%
+    dplyr::arrange(dplyr::desc(mean_log2FC))
+  
+  if (nrow(available) > 0) {
+    # å…¨éºä¼å­ã‚’å«ã‚ã‚‹ï¼ˆlog2FCé †ï¼‰
+    selected_genes[[cat_name]] <- available$gene
+    
+    cat("  ", cat_name, ":", length(selected_genes[[cat_name]]), "genes selected\n")
+  }
+}
+
+# çµ±åˆï¼ˆé‡è¤‡å‰Šé™¤ï¼‰
+key_genes_available <- unique(unlist(selected_genes))
+
+cat("\n=== Final Gene Set ===\n")
+cat("Total unique genes:", length(key_genes_available), "\n")
+cat("Genes by category:\n")
+for (cat_name in names(selected_genes)) {
+  if (length(selected_genes[[cat_name]]) > 0) {
+    cat("  ", cat_name, ":\n    ", 
+        paste(selected_genes[[cat_name]], collapse = ", "), "\n")
+  }
+}
+cat("\n")
+
+# 20-25éºä¼å­ã«èª¿æ•´ï¼ˆå¿…è¦ãªå ´åˆï¼‰
+if (length(key_genes_available) > 25) {
+  cat("Reducing to 25 genes...\n")
+  
+  # å„ªå…ˆé †ä½ï¼šT_cell_Exhaustion > Myeloid_Activation > Tubular_Injury
+  priority_categories <- c("T_cell_Exhaustion", "Inflammatory_Chemokine",
+                          "Myeloid_Activation", "Tubular_Injury", 
+                          "T_cell_Activation", "Endothelial_Activation")
+  
+  key_genes_available <- c()
+  for (cat_name in priority_categories) {
+    if (cat_name %in% names(selected_genes)) {
+      genes_to_add <- selected_genes[[cat_name]][1:min(4, length(selected_genes[[cat_name]]))]
+      key_genes_available <- c(key_genes_available, genes_to_add)
+      if (length(unique(key_genes_available)) >= 25) break
+    }
+  }
+  key_genes_available <- unique(key_genes_available)[1:25]
+}
+
+cat("\nFinal gene count:", length(key_genes_available), "\n\n")
+
+## ---- STEP 2: Broad Cell Type Ã— Condition pseudobulk ----
+cat("\n=== Creating Pseudobulk Matrix by Broad Cell Type ===\n")
+
+# major_celltypeã‚’çµ±ä¸€
+scffpe$major_celltype_unified <- gsub("_cells$", "", scffpe$major_celltype)
+
+# â˜…â˜…â˜… Broad_CellTypeã‚’äº‹å‰ã«å®šç¾© â˜…â˜…â˜…
+scffpe$broad_celltype <- dplyr::case_when(
+  grepl("Tubul", scffpe$major_celltype_unified, ignore.case = TRUE) ~ "Tubular",
+  grepl("Myeloid", scffpe$major_celltype_unified, ignore.case = TRUE) ~ "Myeloid",
+  grepl("T_NK|B_Plasma", scffpe$major_celltype_unified, ignore.case = TRUE) ~ "Immune",
+  grepl("Endothel", scffpe$major_celltype_unified, ignore.case = TRUE) ~ "Endothelial",
+  grepl("Glomerular", scffpe$major_celltype_unified, ignore.case = TRUE) ~ "Glomerular",
+  grepl("Stromal", scffpe$major_celltype_unified, ignore.case = TRUE) ~ "Stromal",
+  TRUE ~ "Other"
+)
+
+cat("Broad cell type distribution:\n")
+print(table(scffpe$broad_celltype))
+cat("\n")
+
+## â˜… Broad_CellType Ã— Condition ã§pseudob ulkä½œæˆ
+pseudobulk_list <- list()
+
+for (broad_ct in unique(scffpe$broad_celltype)) {
+  for (condition in unique(scffpe$group)) {
+
+    # â˜… Broad_CellTypeã§ãƒ•ã‚£ãƒ«ã‚¿ï¼ˆT_NKã¨B_PlasmaãŒçµ±åˆã•ã‚Œã‚‹ï¼‰
+    cells <- rownames(scffpe@meta.data)[
+      scffpe@meta.data$broad_celltype == broad_ct &
+        scffpe@meta.data$group == condition
+    ]
+
+    if (length(cells) >= 10) {
+      expr_data <- GetAssayData(scffpe,
+                                slot = "data",
+                                assay = "RNA")[key_genes_available, cells,
+                                               drop = FALSE]
+      mean_expr <- rowMeans(expr_data)
+      
+      # â˜… ã‚µãƒ³ãƒ—ãƒ«åï¼šBroad_CellType_Condition
+      sample_id <- paste0(broad_ct, "_", condition)
+      pseudobulk_list[[sample_id]] <- mean_expr
+      
+      cat("Created:", sample_id, "with", length(cells), "cells\n")
+    }
+  }
+}
+
+if (length(pseudobulk_list) == 0) {
+  cat("âš ï¸ No pseudobulk groups with â‰¥10 cells; skip Figure 2C.\n\n")
+} else {
+
+  pseudobulk_matrix <- do.call(cbind, pseudobulk_list)
+  cat("\nPseudobulk matrix:", nrow(pseudobulk_matrix), "genes x",
+      ncol(pseudobulk_matrix), "samples\n")
+  
+  cat("\nSample names:\n")
+  print(colnames(pseudobulk_matrix))
+  cat("\n")
+  
+## ---- STEP 3: Scaling & annotations ----
+
+# gene-wise Z-score
+pseudobulk_scaled <- t(scale(t(pseudobulk_matrix)))
+pseudobulk_scaled[is.na(pseudobulk_scaled)] <- 0
+pseudobulk_scaled[pseudobulk_scaled >  2.5] <-  2.5
+pseudobulk_scaled[pseudobulk_scaled < -2.5] <- -2.5
+
+# â˜… åˆ—ã‚¢ãƒŽãƒ†ãƒ¼ã‚·ãƒ§ãƒ³ï¼ˆã‚·ãƒ³ãƒ—ãƒ«ï¼‰
+col_anno_df <- data.frame(
+  Sample = colnames(pseudobulk_scaled),
+  stringsAsFactors = FALSE
+) %>%
+  dplyr::mutate(
+    # Broad_CellType: ã‚¢ãƒ³ãƒ€ãƒ¼ã‚¹ã‚³ã‚¢ã®å‰
+    Broad_CellType = sub("_(Drug_AKI|ICI_AKI|Rejection)$", "", Sample),
+    
+    # Condition: ã‚¢ãƒ³ãƒ€ãƒ¼ã‚¹ã‚³ã‚¢ã®å¾Œ
+    Condition = sub(".*_(Drug_AKI|ICI_AKI|Rejection)$", "\\1", Sample)
+  )
+
+rownames(col_anno_df) <- col_anno_df$Sample
+col_anno_df$Sample <- NULL
+
+cat("Column annotations:\n")
+print(col_anno_df)
+cat("\n")
+
+# NAãƒã‚§ãƒƒã‚¯
+if (any(is.na(col_anno_df$Broad_CellType)) || any(is.na(col_anno_df$Condition))) {
+  stop("Sample name parsing failed")
+}
+
+## Condition colors
+condition_colors_full <- c(
+  "Drug_AKI"  = "#4DAF4A",
+  "ICI_AKI"   = "#E41A1C",
+  "Rejection" = "#377EB8"
+)
+
+present_conditions <- c("Drug_AKI", "ICI_AKI", "Rejection")
+cond_cols <- condition_colors_full[present_conditions]
+
+## Broad cell type colorsï¼ˆå›ºå®šé †åºï¼‰
+broad_order <- c("Immune", "Myeloid", "Tubular", "Glomerular", "Endothelial", "Stromal", "Other")
+present_broad <- intersect(broad_order, unique(col_anno_df$Broad_CellType))
+
+fixed_colors <- c(
+  "Immune"      = "#E78AC3",
+  "Myeloid"     = "#FC8D62",
+  "Tubular"     = "#FFD92F",
+  "Glomerular"  = "#A6D854",
+  "Endothelial" = "#66C2A5",
+  "Stromal"     = "#8DA0CB",
+  "Other"       = "#E5C494"
+)
+
+celltype_cols <- fixed_colors[present_broad]
+
+## annotation_colors
+ann_colors <- list(
+  Cell_Type   = celltype_cols,
+  Condition   = cond_cols
+)
+
+## ä¸¦ã³æ›¿ãˆï¼šBroad_CellType â†’ Condition
+col_anno_df$Condition      <- factor(col_anno_df$Condition,
+                                     levels = present_conditions)
+col_anno_df$Broad_CellType <- factor(col_anno_df$Broad_CellType,
+                                     levels = present_broad)
+
+col_anno_df <- col_anno_df %>%
+  dplyr::arrange(Broad_CellType, Condition)
+
+cat("Final column order:\n")
+print(col_anno_df)
+cat("\n")
+
+pseudobulk_scaled <- pseudobulk_scaled[, rownames(col_anno_df)]
+
+# Cell Type ãƒ–ãƒ­ãƒƒã‚¯ã®åŒºåˆ‡ã‚Š
+gap_positions <- which(diff(as.numeric(col_anno_df$Broad_CellType)) != 0)
+cat("Gap positions:", gap_positions, "\n\n")
+
+# xè»¸ãƒ©ãƒ™ãƒ«ï¼šConditionå
+labels_col <- as.character(col_anno_df$Condition)
+
+# pheatmap ç”¨ annotation_col
+anno_col_for_pheatmap <- data.frame(
+  Cell_Type = col_anno_df$Broad_CellType,
+  Condition = col_anno_df$Condition,
+  row.names = rownames(col_anno_df),
+  stringsAsFactors = FALSE
+)
+
+## ---- STEP 4: Gene ordering and Heatmap (duplicate-safe) ----
+
+# ã‚«ãƒ†ã‚´ãƒªåˆ¥ã«éºä¼å­ã‚’ã‚½ãƒ¼ãƒˆï¼ˆlog2FCé™é †ï¼‰
+sorted_genes <- list()
+
+for (cat_name in names(selected_genes)) {
+  genes_in_cat <- intersect(selected_genes[[cat_name]], key_genes_available)
+  
+  if (length(genes_in_cat) > 0) {
+    gene_fc <- ici_specific_genes %>%
+      dplyr::filter(gene %in% genes_in_cat) %>%
+      dplyr::arrange(dplyr::desc(mean_log2FC))
+    
+    sorted_genes[[cat_name]] <- gene_fc$gene
+  }
+}
+
+cat("\n=== Gene ordering by category + log2FC (before dedup) ===\n")
+for (cat_name in names(sorted_genes)) {
+  if (length(sorted_genes[[cat_name]]) > 0) {
+    cat(cat_name, ":", paste(sorted_genes[[cat_name]], collapse = ", "), "\n")
+  }
+}
+
+# ---- ã“ã“ã‹ã‚‰é‡è¤‡è§£æ¶ˆãƒ­ã‚¸ãƒƒã‚¯ ----
+
+# gene ã‚’ã©ã®ã‚«ãƒ†ã‚´ãƒªã«å‰²ã‚Šå½“ã¦ã‚‹ã‹ã®å„ªå…ˆé †ä½
+priority_categories <- c(
+  "T_cell_Exhaustion",
+  "Inflammatory_Chemokine",
+  "Myeloid_Activation",
+  "T_cell_Activation",
+  "Tubular_Injury",
+  "Endothelial_Activation",
+  "Stromal_Activation",
+  "B_Plasma_Activation",
+  "Tissue_Damage"
+)
+
+# ãƒ¦ãƒ‹ãƒ¼ã‚¯ãªéºä¼å­ã®é †ç•ªã¨ã€ãã®ã‚«ãƒ†ã‚´ãƒªã‚’æ±ºã‚ã‚‹
+unique_genes <- c()
+gene_category_vec <- c()
+
+for (cat_name in priority_categories) {
+  if (!cat_name %in% names(sorted_genes)) next
+  
+  for (g in sorted_genes[[cat_name]]) {
+    if (!(g %in% unique_genes)) {
+      unique_genes <- c(unique_genes, g)
+      gene_category_vec[g] <- cat_name
+    }
+  }
+}
+
+gene_order <- unique_genes
+
+cat("\n=== Final gene order (after dedup) ===\n")
+print(gene_order)
+
+# è¡Œã‚¢ãƒŽãƒ†ãƒ¼ã‚·ãƒ§ãƒ³ï¼ˆå„ gene ã« 1ã¤ã®ã‚«ãƒ†ã‚´ãƒªãƒ¼ï¼‰
+gene_anno_df <- data.frame(
+  Category = gene_category_vec[gene_order],
+  row.names = gene_order,
+  stringsAsFactors = FALSE
+)
+
+# ã‚«ãƒ†ã‚´ãƒªã”ã¨ã®é€£ç¶šé•·ã‹ã‚‰ã€è¡Œã®ã‚®ãƒ£ãƒƒãƒ—ä½ç½®ã‚’è¨ˆç®—
+category_seq <- gene_anno_df$Category
+rle_cat <- rle(as.character(category_seq))
+gap_positions_genes <- cumsum(rle_cat$lengths)
+if (length(gap_positions_genes) > 1) {
+  gap_positions_genes <- gap_positions_genes[-length(gap_positions_genes)]
+} else {
+  gap_positions_genes <- NULL
+}
+
+cat("Gap positions (rows):", gap_positions_genes, "\n\n")
+
+# ã‚«ãƒ†ã‚´ãƒªã‚«ãƒ©ãƒ¼
+category_colors <- c(
+  "T_cell_Exhaustion"       = "#984EA3",
+  "Inflammatory_Chemokine"  = "#E41A1C",
+  "Myeloid_Activation"      = "#FF7F00",
+  "T_cell_Activation"       = "#A65628",
+  "Tubular_Injury"          = "#FFD92F",
+  "Endothelial_Activation"  = "#66C2A5",
+  "Stromal_Activation"      = "#8DA0CB",
+  "B_Plasma_Activation"     = "#FC8D62",
+  "Tissue_Damage"           = "#E78AC3"
+)
+
+# annotation_colors ã« Category ã‚’è¿½åŠ 
+ann_colors_full <- list(
+  Cell_Type = celltype_cols,
+  Condition = cond_cols,
+  Category  = category_colors
+)
+
+# ã‚½ãƒ¼ãƒˆæ¸ˆã¿ matrix ã‚’ä½œæˆ
+pseudobulk_scaled_sorted <- pseudobulk_scaled[gene_order, ]
+
+# Heatmap
+heat_cols <- colorRampPalette(c("navy", "white", "firebrick3"))(100)
+
+p2c_heatmap <- pheatmap::pheatmap(
+  mat               = pseudobulk_scaled_sorted,
+  color             = heat_cols,
+  breaks            = seq(-2.5, 2.5, length.out = 101),
+  cluster_rows      = FALSE,
+  cluster_cols      = FALSE,
+  annotation_col    = anno_col_for_pheatmap,
+  annotation_row    = gene_anno_df,
+  annotation_colors = ann_colors_full,
+  gaps_col          = gap_positions,
+  gaps_row          = gap_positions_genes,
+  show_colnames     = TRUE,
+  show_rownames     = TRUE,
+  fontsize_row      = 9,
+  fontsize_col      = 7,
+  angle_col         = 45,
+  main              = "ICI-AKI signature genes by cell lineage (scFFPE)",
+  border_color      = NA,
+  cellwidth         = 15,
+  cellheight        = 12,
+  silent            = TRUE,
+  labels_col        = labels_col
+)
+
+## ---- Save outputs ----
+png(
+  filename = file.path(output_dir,
+                       "Figure2/Figure2C_scFFPE_signature_by_celltype_grouped.png"),
+  width = 12, height = 8, units = "in", res = 300
+)
+print(p2c_heatmap)
+dev.off()
+
+pdf(
+  file = file.path(output_dir,
+                   "Figure2/Figure2C_scFFPE_signature_by_celltype_grouped.pdf"),
+  width = 12, height = 8
+)
+print(p2c_heatmap)
+dev.off()
+
+write.csv(
+  pseudobulk_matrix,
+  file.path(output_dir, "Statistics/Figure2C_pseudobulk_expression_celltype_grouped.csv")
+)
+
+cat("âœ… Figure 2C (cell type-grouped) created and saved.\n\n")
+}
+}
+
+## ---- figure2c_signature_heatmap_logFC_only, fig.width=12, fig.height=8 ----
+cat("=== Creating Figure 2C (log2FC-ordered, no Category) ===\n")
+
+# 1. ãƒ’ãƒ¼ãƒˆãƒžãƒƒãƒ—ã«ä½¿ã†éºä¼å­é›†åˆ
+#   ï¼ˆæ—¢å­˜ã® Figure2C ã¨åŒã˜éºä¼å­ã«ã—ãŸã„å ´åˆï¼‰
+genes_for_heatmap <- rownames(pseudobulk_scaled)  # ï¼å…ˆã»ã©ã® heatmap ã«ä½¿ã£ãŸéºä¼å­
+
+# 2. ici_specific_genes ã® mean_log2FC ã§ä¸¦ã¹æ›¿ãˆ
+gene_order_logfc <- ici_specific_genes %>%
+  dplyr::filter(gene %in% genes_for_heatmap) %>%
+  dplyr::arrange(dplyr::desc(mean_log2FC)) %>%
+  dplyr::pull(gene)
+
+# å¿µã®ãŸã‚ãƒ€ãƒ–ã‚Šãƒ»é †åºã‚’æ•´ãˆã‚‹
+gene_order_logfc <- intersect(gene_order_logfc, genes_for_heatmap)
+
+cat("Genes used (log2FC-ordered):\n")
+print(gene_order_logfc)
+cat("\n")
+
+# 3. è¡Œé †ã‚’ log2FC é †ã«ä¸¦ã¹æ›¿ãˆãŸè¡Œåˆ—ã‚’ä½œæˆ
+pseudobulk_scaled_logfc <- pseudobulk_scaled[gene_order_logfc, , drop = FALSE]
+
+# 4. annotation_col ã¯æ—¢å­˜ã®ã‚‚ã®ã‚’å†åˆ©ç”¨ï¼ˆCell_Type / Condition ã®ã¿ï¼‰
+anno_colors_logfc <- list(
+  Cell_Type = celltype_cols,
+  Condition = cond_cols
+)
+
+# 5. Heatmap ä½œæˆï¼ˆCategory ã® annotation_row ã¯ä»˜ã‘ãªã„ï¼‰
+heat_cols <- colorRampPalette(c("navy", "white", "firebrick3"))(100)
+
+p2c_heatmap_logfc <- pheatmap::pheatmap(
+  mat               = pseudobulk_scaled_logfc,
+  color             = heat_cols,
+  breaks            = seq(-2.5, 2.5, length.out = 101),
+  cluster_rows      = FALSE,
+  cluster_cols      = FALSE,
+  annotation_col    = anno_col_for_pheatmap,
+  annotation_colors = anno_colors_logfc,
+  gaps_col          = gap_positions,
+  show_colnames     = TRUE,
+  show_rownames     = TRUE,
+  fontsize_row      = 9,
+  fontsize_col      = 7,
+  angle_col         = 45,
+  main              = "ICI-AKI signature genes by cell lineage (log2FC-ordered, scFFPE)",
+  border_color      = NA,
+  cellwidth         = 15,
+  cellheight        = 12,
+  silent            = TRUE,
+  labels_col        = labels_col
+)
+
+## 6. ä¿å­˜
+png(
+  filename = file.path(
+    output_dir,
+    "Figure2/Figure2C_scFFPE_signature_logFC_only.png"
+  ),
+  width = 12, height = 8, units = "in", res = 300
+)
+print(p2c_heatmap_logfc)
+dev.off()
+
+pdf(
+  file = file.path(
+    output_dir,
+    "Figure2/Figure2C_scFFPE_signature_logFC_only.pdf"
+  ),
+  width = 12, height = 8
+)
+print(p2c_heatmap_logfc)
+dev.off()
+
+write.csv(
+  pseudobulk_scaled_logfc,
+  file.path(output_dir, "Statistics/Figure2C_pseudobulk_expression_logFC_only.csv")
+)
+
+cat("âœ… Figure 2C (log2FC-ordered, no Category) created and saved.\n\n")
+
+```
+
+## è¿½åŠ è§£æž: IFI27ã¨FOSã®ç™ºç¾ãƒ‘ã‚¿ãƒ¼ãƒ³
+
+```{r ifi27_fos_visualization, fig.width=14, fig.height=10}
+cat("=== Visualizing IFI27 and FOS Expression ===\n")
+
+# å¯¾è±¡éºä¼å­
+target_genes <- c("IFI27", "FOS")
+
+# éºä¼å­ãŒãƒ‡ãƒ¼ã‚¿ã«å­˜åœ¨ã™ã‚‹ã‹ç¢ºèª
+genes_available <- target_genes[target_genes %in% rownames(scffpe)]
+genes_missing <- target_genes[!target_genes %in% rownames(scffpe)]
+
+if (length(genes_missing) > 0) {
+  cat("âš ï¸ Following genes not found in data:", paste(genes_missing, collapse = ", "), "\n")
+}
+
+if (length(genes_available) == 0) {
+  cat("âŒ No target genes found in the dataset\n")
+} else {
+  cat("âœ… Found genes:", paste(genes_available, collapse = ", "), "\n\n")
+  
+  ## ---- 1. Violin Plot by Condition ----
+  cat("Creating violin plots by condition...\n")
+  
+  vln_plots <- list()
+  for (gene in genes_available) {
+    p <- VlnPlot(
+      scffpe,
+      features = gene,
+      group.by = "group",
+      pt.size = 0,
+      cols = condition_colors
+    ) +
+      labs(title = paste0(gene, " expression by condition"),
+           x = "Condition",
+           y = "Expression level") +
+      theme_publication() +
+      theme(legend.position = "none")
+    
+    vln_plots[[gene]] <- p
+  }
+  
+  ## ---- 2. Violin Plot by Cell Type ----
+  cat("Creating violin plots by cell type...\n")
+  
+  vln_celltype_plots <- list()
+  for (gene in genes_available) {
+    p <- VlnPlot(
+      scffpe,
+      features = gene,
+      group.by = "major_celltype",
+      pt.size = 0,
+      cols = major_celltype_colors
+    ) +
+      labs(title = paste0(gene, " expression by cell type"),
+           x = "Cell Type",
+           y = "Expression level") +
+      theme_publication() +
+      theme(
+        axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "none"
+      )
+    
+    vln_celltype_plots[[gene]] <- p
+  }
+  
+  ## ---- 3. Feature Plot (UMAP) ----
+  cat("Creating UMAP feature plots...\n")
+  
+  if ("umap" %in% names(scffpe@reductions)) {
+    feature_plots <- FeaturePlot(
+      scffpe,
+      features = genes_available,
+      reduction = "umap",
+      ncol = 2,
+      pt.size = 0.5,
+      cols = c("lightgrey", "red")
+    ) &
+      theme_publication() &
+      theme(
+        legend.position = "right",
+        plot.title = element_text(face = "bold", hjust = 0.5)
+      )
+  } else {
+    cat("âš ï¸ UMAP reduction not found, skipping feature plots\n")
+    feature_plots <- NULL
+  }
+  
+  ## ---- 4. Dot Plot: Condition Ã— Cell Type ----
+  cat("Creating dot plot...\n")
+  
+  # Condition Ã— Cell Type ã®çµ„ã¿åˆã‚ã›ã‚’ä½œæˆ
+  scffpe$condition_celltype <- paste0(scffpe$group, "_", scffpe$major_celltype)
+  
+  dot_plot <- DotPlot(
+    scffpe,
+    features = genes_available,
+    group.by = "condition_celltype",
+    cols = c("lightgrey", "red"),
+    dot.scale = 8
+  ) +
+    coord_flip() +
+    labs(title = "Expression across Condition Ã— Cell Type") +
+    theme_publication() +
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1, size = 8),
+      axis.text.y = element_text(size = 10)
+    )
+  
+  ## ---- 5. Heatmap: Pseudobulk by Condition ----
+  cat("Creating pseudobulk heatmap...\n")
+  
+  # Pseudobulk by Condition
+  pseudobulk_condition <- list()
+  for (condition in unique(scffpe$group)) {
+    cells <- rownames(scffpe@meta.data)[scffpe@meta.data$group == condition]
+    if (length(cells) >= 10) {
+      expr_data <- GetAssayData(scffpe, slot = "data", assay = "RNA")[genes_available, cells, drop = FALSE]
+      pseudobulk_condition[[condition]] <- rowMeans(expr_data)
+    }
+  }
+  
+  if (length(pseudobulk_condition) > 0) {
+    pb_matrix <- do.call(cbind, pseudobulk_condition)
+    
+    # Z-score normalization
+    pb_scaled <- t(scale(t(pb_matrix)))
+    pb_scaled[is.na(pb_scaled)] <- 0
+    
+    # Heatmap
+    condition_anno <- data.frame(
+      Condition = colnames(pb_scaled),
+      row.names = colnames(pb_scaled)
+    )
+    
+    anno_colors_cond <- list(
+      Condition = condition_colors[colnames(pb_scaled)]
+    )
+    
+    heatmap_condition <- pheatmap::pheatmap(
+      pb_scaled,
+      color = colorRampPalette(c("navy", "white", "firebrick3"))(100),
+      breaks = seq(-2, 2, length.out = 101),
+      cluster_rows = FALSE,
+      cluster_cols = FALSE,
+      annotation_col = condition_anno,
+      annotation_colors = anno_colors_cond,
+      show_colnames = TRUE,
+      show_rownames = TRUE,
+      fontsize_row = 12,
+      fontsize_col = 10,
+      main = "IFI27 and FOS: Pseudobulk by Condition",
+      border_color = "black",
+      cellwidth = 30,
+      cellheight = 20
+    )
+  }
+  
+  ## ---- 6. Statistical Comparison ----
+  cat("Performing statistical tests...\n")
+  
+  stat_results <- list()
+  for (gene in genes_available) {
+    # Extract expression data
+    expr <- GetAssayData(scffpe, slot = "data", assay = "RNA")[gene, ]
+    meta <- scffpe@meta.data
+    meta$expression <- expr
+    
+    # Kruskal-Wallis test (non-parametric)
+    kw_test <- kruskal.test(expression ~ group, data = meta)
+    
+    # Pairwise Wilcoxon test
+    if (kw_test$p.value < 0.05) {
+      pairwise <- pairwise.wilcox.test(
+        meta$expression,
+        meta$group,
+        p.adjust.method = "BH"
+      )
+      
+      stat_results[[gene]] <- list(
+        kruskal_wallis = kw_test,
+        pairwise = pairwise
+      )
+    }
+  }
+  
+  ## ---- Save Outputs ----
+  cat("\nSaving figures...\n")
+  
+  # 1. Violin plots by condition
+  if (length(vln_plots) > 0) {
+    combined_vln <- wrap_plots(vln_plots, ncol = 2)
+    ggsave(
+      filename = file.path(output_dir, "Additional/IFI27_FOS_violin_by_condition.png"),
+      plot = combined_vln,
+      width = 12, height = 6, dpi = 300
+    )
+    ggsave(
+      filename = file.path(output_dir, "Additional/IFI27_FOS_violin_by_condition.pdf"),
+      plot = combined_vln,
+      width = 12, height = 6
+    )
+  }
+  
+  # 2. Violin plots by cell type
+  if (length(vln_celltype_plots) > 0) {
+    combined_vln_ct <- wrap_plots(vln_celltype_plots, ncol = 1)
+    ggsave(
+      filename = file.path(output_dir, "Additional/IFI27_FOS_violin_by_celltype.png"),
+      plot = combined_vln_ct,
+      width = 14, height = 10, dpi = 300
+    )
+    ggsave(
+      filename = file.path(output_dir, "Additional/IFI27_FOS_violin_by_celltype.pdf"),
+      plot = combined_vln_ct,
+      width = 14, height = 10
+    )
+  }
+  
+  # 3. Feature plots
+  if (!is.null(feature_plots)) {
+    ggsave(
+      filename = file.path(output_dir, "Additional/IFI27_FOS_UMAP.png"),
+      plot = feature_plots,
+      width = 12, height = 6, dpi = 300
+    )
+    ggsave(
+      filename = file.path(output_dir, "Additional/IFI27_FOS_UMAP.pdf"),
+      plot = feature_plots,
+      width = 12, height = 6
+    )
+  }
+  
+  # 4. Dot plot
+  ggsave(
+    filename = file.path(output_dir, "Additional/IFI27_FOS_dotplot.png"),
+    plot = dot_plot,
+    width = 14, height = 6, dpi = 300
+  )
+  ggsave(
+    filename = file.path(output_dir, "Additional/IFI27_FOS_dotplot.pdf"),
+    plot = dot_plot,
+    width = 14, height = 6
+  )
+  
+  # 5. Pseudobulk heatmap
+  if (exists("heatmap_condition")) {
+    png(
+      filename = file.path(output_dir, "Additional/IFI27_FOS_pseudobulk_heatmap.png"),
+      width = 8, height = 6, units = "in", res = 300
+    )
+    print(heatmap_condition)
+    dev.off()
+    
+    pdf(
+      file = file.path(output_dir, "Additional/IFI27_FOS_pseudobulk_heatmap.pdf"),
+      width = 8, height = 6
+    )
+    print(heatmap_condition)
+    dev.off()
+  }
+  
+  # 6. Save statistical results
+  if (length(stat_results) > 0) {
+    sink(file.path(output_dir, "Additional/IFI27_FOS_statistics.txt"))
+    for (gene in names(stat_results)) {
+      cat("\n==========================================\n")
+      cat("Gene:", gene, "\n")
+      cat("==========================================\n\n")
+      
+      cat("Kruskal-Wallis Test:\n")
+      print(stat_results[[gene]]$kruskal_wallis)
+      
+      if (!is.null(stat_results[[gene]]$pairwise)) {
+        cat("\nPairwise Wilcoxon Test (BH-adjusted):\n")
+        print(stat_results[[gene]]$pairwise)
+      }
+      cat("\n")
+    }
+    sink()
+  }
+  
+  ## ---- Summary Table ----
+  cat("\nCreating summary table...\n")
+  
+  summary_data <- data.frame(
+    Gene = character(),
+    Condition = character(),
+    Mean_Expression = numeric(),
+    Median_Expression = numeric(),
+    Pct_Expressing = numeric(),
+    stringsAsFactors = FALSE
+  )
+  
+  for (gene in genes_available) {
+    expr <- GetAssayData(scffpe, slot = "data", assay = "RNA")[gene, ]
+    
+    for (condition in unique(scffpe$group)) {
+      cells_in_cond <- scffpe$group == condition
+      expr_cond <- expr[cells_in_cond]
+      
+      summary_data <- rbind(summary_data, data.frame(
+        Gene = gene,
+        Condition = condition,
+        Mean_Expression = mean(expr_cond),
+        Median_Expression = median(expr_cond),
+        Pct_Expressing = sum(expr_cond > 0) / length(expr_cond) * 100
+      ))
+    }
+  }
+  
+  write.csv(
+    summary_data,
+    file.path(output_dir, "Additional/IFI27_FOS_summary.csv"),
+    row.names = FALSE
+  )
+  
+  cat("\nâœ… IFI27 and FOS analysis complete!\n")
+  cat("\nOutput files saved in:", file.path(output_dir, "Additional"), "\n\n")
+  
+  # Display summary table
+  cat("Summary of expression:\n")
+  print(summary_data)
+}
+```
+
+## ã‚»ãƒƒã‚·ãƒ§ãƒ³æƒ…å ±
+
+```{r session_info}
+cat("=== SESSION INFORMATION ===\n")
+sessionInfo()
+```
+
+---

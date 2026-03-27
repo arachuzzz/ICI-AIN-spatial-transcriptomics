@@ -1,0 +1,1488 @@
+---
+title: "Supplemental Figure 5: CXCR3-CXCL9/10 Axis Analysis"
+author: "Hiroyuki Arai"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    code_folding: show
+    theme: cosmo
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE,
+  fig.width = 12,
+  fig.height = 10,
+  dpi = 300
+)
+```
+
+# Overview
+
+**ç›®çš„**: CXCR3-CXCL9/10 chemokine axisã®ç™ºç¾è§£æž  
+**ãƒ‡ãƒ¼ã‚¿ã‚½ãƒ¼ã‚¹**: CosMx spatial transcriptomics + scFFPE single-cell  
+**å‡ºåŠ›**: Supplemental Figure 5 (Publication-quality)
+
+**ç”Ÿç‰©å­¦çš„èƒŒæ™¯**:
+- CXCR3: Tç´°èƒžã«ç™ºç¾ã™ã‚‹ã‚±ãƒ¢ã‚«ã‚¤ãƒ³å—å®¹ä½“
+- CXCL9, CXCL10: CXCR3ãƒªã‚¬ãƒ³ãƒ‰ã§ç‚Žç—‡æ™‚ã«ä¸Šçš®ç´°èƒžãƒ»ãƒžã‚¯ãƒ­ãƒ•ã‚¡ãƒ¼ã‚¸ã‹ã‚‰åˆ†æ³Œ
+- ICI-AKIã«ãŠã‘ã‚‹å…ç–«ç´°èƒžãƒªã‚¯ãƒ«ãƒ¼ãƒˆãƒ¡ãƒ³ãƒˆã®é‡è¦ãªè»¸
+
+---
+
+# 1. Setup & Library Loading
+
+```{r libraries}
+# å¿…é ˆãƒ©ã‚¤ãƒ–ãƒ©ãƒª
+library(Seurat)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(patchwork)
+library(RColorBrewer)
+library(viridis)
+library(scales)
+library(gridExtra)
+library(kableExtra)
+library(ggpubr)
+library(rstatix)
+
+# æ˜Žç¤ºçš„ãªé–¢æ•°å®šç¾©ï¼ˆMASS packageã¨ã®è¡çªå›žé¿ï¼‰
+select <- dplyr::select
+filter <- dplyr::filter
+mutate <- dplyr::mutate
+summarise <- dplyr::summarise
+arrange <- dplyr::arrange
+
+cat("âœ… Libraries loaded\n")
+```
+
+## Color Palettes & Theme
+
+```{r colors_theme}
+cat("=== Defining Color Palettes & Theme ===\n")
+
+# Condition colors (existing scripts compatible)
+condition_colors <- c(
+  "ICI-AKI" = "#E41A1C",
+  "ICI_AKI" = "#E41A1C",
+  "Rejection" = "#377EB8",
+  "Drug-induced_AKI" = "#4DAF4A",
+  "Drug_AKI" = "#4DAF4A"
+)
+
+# Sample colors
+sample_colors <- c(
+  "S0" = "#377EB8",
+  "S1" = "#E41A1C",
+  "S2" = "#4DAF4A",
+  "S3" = "#984EA3"
+)
+
+# Major cell type colors
+major_celltype_colors <- c(
+  "Epithelial" = "#E41A1C",
+  "Tubular_cells" = "#E41A1C",
+  "Endothelial" = "#377EB8",
+  "Immune" = "#4DAF4A",
+  "Immune_cells" = "#4DAF4A",
+  "Stromal" = "#984EA3",
+  "Stromal_cells" = "#984EA3",
+  "Other" = "#999999"
+)
+
+# Publication theme function (consistent with existing Figure scripts)
+theme_publication <- function(base_size = 12) {
+  theme_bw(base_size = base_size) +
+    theme(
+      # Text
+      plot.title = element_text(size = base_size + 2, face = "bold", hjust = 0.5),
+      plot.subtitle = element_text(size = base_size, hjust = 0.5),
+      axis.title = element_text(size = base_size, face = "bold"),
+      axis.text = element_text(size = base_size - 1, color = "black"),
+      
+      # Legend
+      legend.title = element_text(size = base_size, face = "bold"),
+      legend.text = element_text(size = base_size - 1),
+      legend.background = element_rect(fill = "white", color = "black"),
+      legend.key.size = unit(0.5, "cm"),
+      
+      # Panel
+      panel.background = element_rect(fill = "white"),
+      panel.grid.major = element_line(color = "grey90", size = 0.3),
+      panel.grid.minor = element_blank(),
+      panel.border = element_rect(color = "black", fill = NA, size = 1),
+      
+      # Strip (facet labels)
+      strip.background = element_rect(fill = "grey90", color = "black"),
+      strip.text = element_text(size = base_size, face = "bold"),
+      
+      # Margins
+      plot.margin = margin(10, 10, 10, 10)
+    )
+}
+
+cat("âœ… Color palettes defined\n")
+cat("âœ… Publication theme defined\n\n")
+```
+
+---
+
+# 2. Data Loading
+
+```{r load_data}
+cat("=== Loading CosMx Data ===\n")
+
+# ãƒ™ãƒ¼ã‚¹ãƒ‡ã‚£ãƒ¬ã‚¯ãƒˆãƒªè¨­å®šï¼ˆæ—¢å­˜ã‚¹ã‚¯ãƒªãƒ—ãƒˆã«åˆã‚ã›ã‚‹ï¼‰
+base_dir <- "/Users/HiroyukiArai/Documents/2025å¹´ç•™å­¦/ç ”ç©¶é–¢é€£/ç ”ç©¶çµæžœ/202509 cosmx-kidney-project"
+
+# ãƒ‡ãƒ¼ã‚¿ãƒ‘ã‚¹ç¢ºèª
+if(!dir.exists(base_dir)) {
+  stop("âŒ Base directory not found: ", base_dir)
+}
+
+cat("âœ… Using base directory:", base_dir, "\n")
+
+# CosMxãƒ•ã‚¡ã‚¤ãƒ«ã®è‡ªå‹•æ¤œç´¢ï¼ˆæ—¢å­˜ã‚¹ã‚¯ãƒªãƒ—ãƒˆã¨åŒæ§˜ã®æ–¹æ³•ï¼‰
+# Option 1: Signatureä»˜ããƒ•ã‚¡ã‚¤ãƒ«ï¼ˆå„ªå…ˆï¼‰
+phase2_pattern <- "results/figures/.*CosMx_Signature_Projection.*"
+phase2_dirs <- list.dirs(base_dir, recursive = TRUE, full.names = TRUE)
+phase2_dirs <- phase2_dirs[grepl(phase2_pattern, phase2_dirs)]
+
+data_file <- NULL
+
+if(length(phase2_dirs) > 0) {
+  # Phase 2ãƒ‡ã‚£ãƒ¬ã‚¯ãƒˆãƒªãŒè¦‹ã¤ã‹ã£ãŸå ´åˆ
+  latest_dir <- phase2_dirs[length(phase2_dirs)]
+  cat("Found Phase 2 directory:", latest_dir, "\n")
+  
+  rds_files <- list.files(latest_dir, pattern = "CosMx_with_signatures.*\\.rds$", 
+                          full.names = TRUE, recursive = TRUE)
+  
+  if(length(rds_files) > 0) {
+    data_file <- rds_files[length(rds_files)]
+    cat("âœ… Using Signature-integrated file:", basename(data_file), "\n")
+  }
+}
+
+# Option 2: åŸºæœ¬ã‚¢ãƒŽãƒ†ãƒ¼ã‚·ãƒ§ãƒ³ãƒ•ã‚¡ã‚¤ãƒ«ï¼ˆãƒ•ã‚©ãƒ¼ãƒ«ãƒãƒƒã‚¯ï¼‰
+if(is.null(data_file)) {
+  cat("âš ï¸ Signature file not found, searching for basic annotation file...\n")
+  
+  possible_paths <- c(
+    file.path(base_dir, "20251117_CosMx_comprehensive_annotation.rds"),
+    file.path(base_dir, "20251117_CosMx_SCT_nolabeltransfer_comprehensive_annotation.rds")
+  )
+  
+  for(path in possible_paths) {
+    if(file.exists(path)) {
+      data_file <- path
+      cat("âœ… Found annotation file:", basename(data_file), "\n")
+      break
+    }
+  }
+}
+
+# ãƒ•ã‚¡ã‚¤ãƒ«ãŒè¦‹ã¤ã‹ã‚‰ãªã„å ´åˆ
+if(is.null(data_file) || !file.exists(data_file)) {
+  cat("\nâŒ CosMx file not found. Please check the following locations:\n")
+  cat("1.", file.path(base_dir, "results/figures/[timestamp]/CosMx_with_signatures_*.rds"), "\n")
+  cat("2.", file.path(base_dir, "20251117_CosMx_comprehensive_annotation.rds"), "\n")
+  stop("âŒ CosMx data file not found!")
+}
+
+# ãƒ‡ãƒ¼ã‚¿èª­ã¿è¾¼ã¿
+cosmx <- readRDS(data_file)
+
+cat("âœ… CosMx data loaded successfully\n")
+cat("Total cells:", ncol(cosmx), "\n")
+cat("Total genes:", nrow(cosmx), "\n")
+
+# ãƒ¡ã‚¿ãƒ‡ãƒ¼ã‚¿ç¢ºèª
+cat("\nAvailable metadata columns:\n")
+cat(paste(colnames(cosmx@meta.data), collapse = ", "), "\n")
+
+# Conditionç¢ºèª
+cat("\nCondition distribution:\n")
+print(table(cosmx$condition))
+```
+
+## Output Directory Setup
+
+```{r output_setup}
+cat("=== Setting up Output Directory ===\n")
+
+# Output directory - timestamped (consistent with existing scripts)
+timestamp <- format(Sys.time(), "%Y%m%d_%H%M%S")
+output_dir <- file.path(base_dir, 
+                        "results", 
+                        "figures", 
+                        paste0("Supplemental_Figure5_CXCR3_axis_", timestamp))
+
+# Create directory structure (matching existing scripts)
+dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+dir.create(file.path(output_dir, "Supplemental_Figure5"), showWarnings = FALSE)
+dir.create(file.path(output_dir, "Statistics"), showWarnings = FALSE)
+dir.create(file.path(output_dir, "Intermediate"), showWarnings = FALSE)
+
+cat("âœ… Output directory created:\n")
+cat("  Main:", output_dir, "\n")
+cat("  Figures:", file.path(output_dir, "Supplemental_Figure5"), "\n")
+cat("  Statistics:", file.path(output_dir, "Statistics"), "\n")
+cat("  Intermediate:", file.path(output_dir, "Intermediate"), "\n\n")
+```
+
+---
+
+# 3. Gene Availability Check
+
+```{r gene_check}
+cat("=== Checking CXCR3-CXCL9/10 Genes ===\n")
+
+# å¯¾è±¡éºä¼å­
+chemokine_genes <- c("CXCR3", "CXCL9", "CXCL10")
+
+# CosMxãƒ‘ãƒãƒ«ã§ã®åˆ©ç”¨å¯èƒ½æ€§ãƒã‚§ãƒƒã‚¯
+genes_available <- chemokine_genes %in% rownames(cosmx)
+names(genes_available) <- chemokine_genes
+
+cat("\nGene availability in CosMx panel:\n")
+for(gene in chemokine_genes) {
+  status <- ifelse(genes_available[gene], "âœ… Available", "âŒ Not available")
+  cat(sprintf("  %s: %s\n", gene, status))
+}
+
+# åˆ©ç”¨å¯èƒ½ãªéºä¼å­ã®ã¿æŠ½å‡º
+available_genes <- chemokine_genes[genes_available]
+
+if(length(available_genes) == 0) {
+  stop("âŒ None of the target genes are available in CosMx panel")
+}
+
+cat("\nâœ… Analysis will proceed with:", paste(available_genes, collapse = ", "), "\n")
+```
+
+---
+
+# 4. CosMx Expression Data Extraction
+
+```{r extract_expression}
+cat("=== Extracting CosMx Expression Data ===\n")
+
+# SCTã‚¢ãƒƒã‚»ã‚¤ä½¿ç”¨ï¼ˆæ­£è¦åŒ–æ¸ˆã¿ï¼‰
+DefaultAssay(cosmx) <- "SCT"
+
+# ç™ºç¾ãƒ‡ãƒ¼ã‚¿æŠ½å‡º
+# åº§æ¨™åˆ—ã®æ¤œå‡º
+coord_cols <- grep("^(x_|y_|X_|Y_)", colnames(cosmx@meta.data), value = TRUE)
+cat("\nCoordinate columns found:\n")
+print(coord_cols)
+
+# å„ªå…ˆé †ä½ã§åº§æ¨™åˆ—ã‚’é¸æŠž
+if ("x_global_px" %in% colnames(cosmx@meta.data)) {
+  x_coord <- "x_global_px"
+  y_coord <- "y_global_px"
+  cat("âœ… Using x_global_px, y_global_px\n")
+} else if ("x_slide_mm" %in% colnames(cosmx@meta.data)) {
+  x_coord <- "x_slide_mm"
+  y_coord <- "y_slide_mm"
+  cat("âœ… Using x_slide_mm, y_slide_mm\n")
+} else if ("x_FOV_px" %in% colnames(cosmx@meta.data)) {
+  x_coord <- "x_FOV_px"
+  y_coord <- "y_FOV_px"
+  cat("âœ… Using x_FOV_px, y_FOV_px\n")
+} else if ("x_local_px" %in% colnames(cosmx@meta.data)) {
+  x_coord <- "x_local_px"
+  y_coord <- "y_local_px"
+  cat("âœ… Using x_local_px, y_local_px\n")
+} else {
+  stop("âŒ No coordinate columns found in metadata")
+}
+
+# ãƒ‡ãƒ¼ã‚¿æŠ½å‡ºï¼ˆæ¤œå‡ºã—ãŸåº§æ¨™åˆ—ã‚’ä½¿ç”¨ï¼‰
+expr_data <- FetchData(cosmx, vars = c(available_genes, 
+                                        "condition", 
+                                        "major_celltype",
+                                        "sample",
+                                        x_coord,
+                                        y_coord))
+
+# åˆ—åã‚’çµ±ä¸€ï¼ˆå¾Œã®å‡¦ç†ã§ä½¿ã„ã‚„ã™ãã™ã‚‹ï¼‰
+colnames(expr_data)[colnames(expr_data) == x_coord] <- "x_coord"
+colnames(expr_data)[colnames(expr_data) == y_coord] <- "y_coord"
+
+cat("\nâœ… CosMx expression data extracted with coordinates\n")
+# ãƒ‡ãƒ¼ã‚¿ç¢ºèª
+cat("Expression data dimensions:", nrow(expr_data), "cells x", 
+    length(available_genes), "genes\n")
+
+# ç™ºç¾çµ±è¨ˆã‚µãƒžãƒªãƒ¼
+cat("\nExpression summary:\n")
+for(gene in available_genes) {
+  pos_cells <- sum(expr_data[[gene]] > 0)
+  pos_pct <- round(pos_cells / nrow(expr_data) * 100, 2)
+  mean_expr <- mean(expr_data[[gene]], na.rm = TRUE)
+  median_expr <- median(expr_data[[gene]], na.rm = TRUE)
+  
+  cat(sprintf("  %s:\n", gene))
+  cat(sprintf("    Positive cells: %d (%.2f%%)\n", pos_cells, pos_pct))
+  cat(sprintf("    Mean expression: %.3f\n", mean_expr))
+  cat(sprintf("    Median expression: %.3f\n", median_expr))
+}
+
+# Conditionã®çµ±ä¸€
+expr_data <- expr_data %>%
+  dplyr::mutate(
+    condition = case_when(
+      condition == "ICI_AKI" ~ "ICI-AKI",
+      condition == "Drug_AKI" ~ "Drug-induced_AKI",
+      TRUE ~ condition
+    )
+  )
+
+cat("\nâœ… CosMx expression data extracted\n")
+```
+
+---
+
+# 4-2. scFFPE Data Loading & Processing
+
+```{r load_scffpe_data}
+cat("=== Loading scFFPE Data ===\n")
+
+# scFFPE data directory
+scffpe_base <- "/Users/HiroyukiArai/Documents/å¤§å­¦é™¢/ç ”ç©¶çµæžœ/2024æ‘ä¸Šå…ˆç”ŸCosMX/202406 single cell FFPE data/scFFPE_kidney_analysis"
+scffpe_data_dir <- file.path(scffpe_base, "results")
+
+# scFFPE object file
+scffpe_file <- file.path(scffpe_data_dir, "scffpe_additional_analysis_complete_doublet_removed.rds")
+
+if(!file.exists(scffpe_file)) {
+  cat("âš ï¸ scFFPE file not found, scFFPE analysis will be skipped\n")
+  scffpe_available <- FALSE
+} else {
+  scffpe <- readRDS(scffpe_file)
+  scffpe_available <- TRUE
+  
+  cat("âœ… scFFPE data loaded\n")
+  cat("Total cells:", ncol(scffpe), "\n")
+  cat("Total genes:", nrow(scffpe), "\n")
+  
+  # ãƒ¡ã‚¿ãƒ‡ãƒ¼ã‚¿ç¢ºèª
+  cat("\nAvailable metadata:\n")
+  cat(paste(head(colnames(scffpe@meta.data), 10), collapse = ", "), "...\n")
+}
+```
+
+## scFFPE Expression Extraction
+
+```{r extract_scffpe_expression}
+if(scffpe_available) {
+  cat("=== Extracting scFFPE Expression Data ===\n")
+  
+  # Set default assay
+  DefaultAssay(scffpe) <- "RNA"
+  
+  # Groupåˆ—ã®ç¢ºèªãƒ»ä½œæˆ
+  if(!"group" %in% colnames(scffpe@meta.data)) {
+    # orig.identã‹ã‚‰groupä½œæˆ
+    scffpe$group <- scffpe$orig.ident
+    cat("Created 'group' column from 'orig.ident'\n")
+  }
+  
+  # Groupåã®çµ±ä¸€
+  scffpe$group <- dplyr::case_when(
+    grepl("ICI|S1|S3", scffpe$group, ignore.case = TRUE) ~ "ICI-AKI",
+    grepl("Drug|S2", scffpe$group, ignore.case = TRUE) ~ "Drug-induced_AKI",
+    grepl("Reject|S0", scffpe$group, ignore.case = TRUE) ~ "Rejection",
+    TRUE ~ scffpe$group
+  )
+  
+  # Major cell typeç¢ºèªãƒ»ä½œæˆ
+  if(!"major_celltype" %in% colnames(scffpe@meta.data)) {
+    if("detailed_celltype" %in% colnames(scffpe@meta.data)) {
+      # detailed_celltypeã‹ã‚‰major_celltypeã‚’ä½œæˆ
+      scffpe$major_celltype <- dplyr::case_when(
+        grepl("T_cell|NK|Treg", scffpe$detailed_celltype) ~ "T_NK_cells",
+        grepl("B_cell|Plasma", scffpe$detailed_celltype) ~ "B_Plasma_cells",
+        grepl("Macrophage|Dendritic", scffpe$detailed_celltype) ~ "Myeloid_cells",
+        grepl("Proximal|Distal|Collecting|Tubule", scffpe$detailed_celltype) ~ "Tubular_cells",
+        grepl("Podocyte", scffpe$detailed_celltype) ~ "Glomerular_cells",
+        grepl("Endothelial", scffpe$detailed_celltype) ~ "Endothelial_cells",
+        grepl("Fibroblast|Pericyte", scffpe$detailed_celltype) ~ "Stromal_cells",
+        TRUE ~ "Other"
+      )
+      cat("Created 'major_celltype' from 'detailed_celltype'\n")
+    } else {
+      scffpe$major_celltype <- "Unknown"
+      cat("Warning: No cell type information found\n")
+    }
+  }
+  
+  # ç™ºç¾ãƒ‡ãƒ¼ã‚¿æŠ½å‡º
+  scffpe_expr <- FetchData(scffpe, vars = c(available_genes,
+                                              "group",
+                                              "major_celltype"))
+  
+  cat("scFFPE expression data dimensions:", nrow(scffpe_expr), "cells x", 
+      length(available_genes), "genes\n")
+  
+  # ç™ºç¾çµ±è¨ˆ
+  cat("\nscFFPE expression summary:\n")
+  for(gene in available_genes) {
+    pos_cells <- sum(scffpe_expr[[gene]] > 0)
+    pos_pct <- round(pos_cells / nrow(scffpe_expr) * 100, 2)
+    mean_expr <- mean(scffpe_expr[[gene]], na.rm = TRUE)
+    
+    cat(sprintf("  %s: %d cells (%.2f%%), mean = %.3f\n", 
+                gene, pos_cells, pos_pct, mean_expr))
+  }
+  
+  cat("\nâœ… scFFPE expression data extracted\n")
+} else {
+  cat("âš ï¸ scFFPE data not available, skipping expression extraction\n")
+}
+```
+
+---
+
+# 5. Supplemental Figure 5A: CosMx Violin Plots
+
+```{r figure5a_cosmx_violin, fig.width=14, fig.height=10}
+cat("=== Supplemental Figure 5A: CosMx Violin Plots ===\n")
+
+# ãƒ‡ãƒ¼ã‚¿æº–å‚™ï¼ˆlong formatï¼‰
+violin_data <- expr_data %>%
+  dplyr::select(all_of(c(available_genes, "condition", "major_celltype"))) %>%
+  tidyr::pivot_longer(
+    cols = all_of(available_genes),
+    names_to = "Gene",
+    values_to = "Expression"
+  )
+
+# çµ±è¨ˆæ¤œå®š
+stat_results <- list()
+for(gene in available_genes) {
+  gene_data <- violin_data %>%
+    dplyr::filter(Gene == gene)
+  
+  # Wilcoxonæ¤œå®šï¼ˆICI-AKI vs ä»–ã®æ¡ä»¶ï¼‰
+  comparisons <- list(
+    c("ICI-AKI", "Rejection"),
+    c("ICI-AKI", "Drug-induced_AKI")
+  )
+  
+  stat_test <- gene_data %>%
+    rstatix::wilcox_test(Expression ~ condition, comparisons = comparisons) %>%
+    rstatix::add_significance() %>%
+    rstatix::add_xy_position(x = "condition")
+  
+  stat_results[[gene]] <- stat_test
+}
+
+# Violin plotä½œæˆ
+violin_plots <- list()
+
+for(gene in available_genes) {
+  gene_data <- violin_data %>%
+    dplyr::filter(Gene == gene)
+  
+  p <- ggplot(gene_data, aes(x = condition, y = Expression, fill = condition)) +
+    geom_violin(trim = FALSE, alpha = 0.7) +
+    geom_boxplot(width = 0.1, fill = "white", outlier.shape = NA) +
+    scale_fill_manual(values = condition_colors) +
+    labs(
+      title = gene,
+      x = NULL,
+      y = "Normalized Expression"
+    ) +
+    theme_publication() +
+    theme(
+      legend.position = "none",
+      axis.text.x = element_text(angle = 45, hjust = 1)
+    )
+  
+  # çµ±è¨ˆæ¤œå®šçµæžœã‚’è¿½åŠ 
+  if(!is.null(stat_results[[gene]])) {
+    p <- p + 
+      ggpubr::stat_pvalue_manual(
+        stat_results[[gene]],
+        label = "p.adj.signif",
+        tip.length = 0.01,
+        step.increase = 0.05,
+        hide.ns = FALSE
+      )
+  }
+  
+  violin_plots[[gene]] <- p
+}
+
+# ãƒ‘ãƒãƒ«çµ±åˆ
+figure_5a <- wrap_plots(violin_plots, ncol = length(available_genes)) +
+  plot_annotation(
+    title = "Supplemental Figure 5A: CXCR3-CXCL9/10 Expression by Condition (CosMx)",
+    theme = theme(plot.title = element_text(size = 16, face = "bold", hjust = 0.5))
+  )
+
+print(figure_5a)
+
+# ä¿å­˜ï¼ˆæ—¢å­˜ã‚¹ã‚¯ãƒªãƒ—ãƒˆå½¢å¼ã«çµ±ä¸€ï¼‰
+ggsave(
+  filename = file.path(output_dir, "Supplemental_Figure5", "Supplemental_Figure5A_CosMx_Violin.pdf"),
+  plot = figure_5a,
+  width = 14,
+  height = 10
+)
+
+ggsave(
+  filename = file.path(output_dir, "Supplemental_Figure5", "Supplemental_Figure5A_CosMx_Violin.png"),
+  plot = figure_5a,
+  width = 14,
+  height = 10,
+  dpi = 300
+)
+
+# çµ±è¨ˆçµæžœä¿å­˜
+for(gene in available_genes) {
+  stat_df <- as.data.frame(stat_results[[gene]])
+  
+  # ãƒªã‚¹ãƒˆåž‹ã®åˆ—ã‚’æ¤œå‡ºã—ã¦é™¤å¤–
+  list_cols <- sapply(stat_df, is.list)
+  stat_df_clean <- stat_df[, !list_cols, drop = FALSE]
+  
+  write.csv(
+    stat_df_clean,
+    file.path(output_dir, "Statistics", paste0("Supplemental_Figure5A_", gene, "_stats.csv")),
+    row.names = FALSE
+  )
+}
+
+cat("âœ… Supplemental Figure 5A saved\n")
+```
+
+---
+
+# 6. Supplemental Figure 5B: CosMx Cell Type-Specific Expression
+
+```{r figure5b_cosmx_celltype, fig.width=16, fig.height=12}
+cat("=== Supplemental Figure 5B: Cell Type-Specific Expression ===\n")
+
+# Major cell typeã§ãƒ•ã‚£ãƒ«ã‚¿ï¼ˆOtherã‚’é™¤å¤–ï¼‰
+celltype_data <- expr_data %>%
+  dplyr::filter(major_celltype != "Other") %>%
+  dplyr::select(all_of(c(available_genes, "condition", "major_celltype"))) %>%
+  tidyr::pivot_longer(
+    cols = all_of(available_genes),
+    names_to = "Gene",
+    values_to = "Expression"
+  )
+
+# Cell typeåˆ¥ã®Violin plot
+celltype_plots <- list()
+
+for(gene in available_genes) {
+  gene_data <- celltype_data %>%
+    dplyr::filter(Gene == gene)
+  
+  p <- ggplot(gene_data, aes(x = major_celltype, y = Expression, fill = condition)) +
+    geom_violin(position = position_dodge(0.8), trim = FALSE, alpha = 0.7) +
+    geom_boxplot(
+      position = position_dodge(0.8), 
+      width = 0.2, 
+      fill = "white",
+      outlier.shape = NA
+    ) +
+    scale_fill_manual(values = condition_colors) +
+    labs(
+      title = gene,
+      x = "Cell Type",
+      y = "Normalized Expression",
+      fill = "Condition"
+    ) +
+    theme_publication() +
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1),
+      legend.position = "bottom"
+    )
+  
+  celltype_plots[[gene]] <- p
+}
+
+# ãƒ‘ãƒãƒ«çµ±åˆ
+figure_5b <- wrap_plots(celltype_plots, ncol = 1) +
+  plot_annotation(
+    title = "Supplemental Figure 5B: Cell Type-Specific Expression (CosMx)",
+    theme = theme(plot.title = element_text(size = 16, face = "bold", hjust = 0.5))
+  )
+
+print(figure_5b)
+
+# ä¿å­˜
+ggsave(
+  filename = file.path(output_dir, "Supplemental_Figure5", "Supplemental_Figure5B_CosMx_CellType.pdf"),
+  plot = figure_5b,
+  width = 16,
+  height = 12
+)
+
+ggsave(
+  filename = file.path(output_dir, "Supplemental_Figure5", "Supplemental_Figure5B_CosMx_CellType.png"),
+  plot = figure_5b,
+  width = 16,
+  height = 12,
+  dpi = 300
+)
+
+cat("âœ… Supplemental Figure 5B saved\n")
+```
+
+---
+
+# 7. Supplemental Figure 5C: CosMx Spatial Distribution
+
+```{r figure5c_cosmx_spatial, fig.width=18, fig.height=14}
+cat("=== Supplemental Figure 5C: Spatial Distribution ===\n")
+
+# ã‚µãƒ³ãƒ—ãƒ«ã”ã¨ã®ç©ºé–“ãƒ—ãƒ­ãƒƒãƒˆ
+spatial_plots <- list()
+
+for(gene in available_genes) {
+  sample_plots <- list()
+  
+  # â˜… ã‚«ãƒ©ãƒ¼ã‚¹ã‚±ãƒ¼ãƒ«ç¯„å›²ã‚’0ã‹ã‚‰è¨­å®š
+  gene_expr_all <- expr_data %>%
+    dplyr::filter(.data[[gene]] > 0) %>%
+    dplyr::pull(!!sym(gene))
+  
+  if(length(gene_expr_all) > 0) {
+    expr_min <- 0  # â˜… 0ã‹ã‚‰å§‹ã‚ã‚‹
+    expr_max <- max(gene_expr_all, na.rm = TRUE)
+    
+    # ç™ºç¾å€¤ã®åˆ†å¸ƒã‚‚è¡¨ç¤º
+    cat(sprintf("\n%s expression statistics:\n", gene))
+    cat(sprintf("  Min (positive cells): %.3f\n", min(gene_expr_all, na.rm = TRUE)))
+    cat(sprintf("  Median: %.3f\n", median(gene_expr_all, na.rm = TRUE)))
+    cat(sprintf("  Mean: %.3f\n", mean(gene_expr_all, na.rm = TRUE)))
+    cat(sprintf("  Max: %.3f\n", expr_max))
+    cat(sprintf("  Color scale range: 0 - %.3f\n", expr_max))
+  } else {
+    expr_min <- 0
+    expr_max <- 1
+  }
+  
+  for(smp in unique(expr_data$sample)) {
+    spatial_data <- expr_data %>%
+      dplyr::filter(sample == smp)
+    
+    cond <- unique(spatial_data$condition)[1]
+    
+    # ã‚µãƒ³ãƒ—ãƒ«ã®åº§æ¨™ç¯„å›²ã‚’å–å¾—ï¼ˆå…¨ç´°èƒžã‹ã‚‰ï¼‰
+    all_cells_sample <- cosmx@meta.data %>%
+      dplyr::filter(sample == smp) %>%
+      dplyr::select(
+        x = x_coord,  # æ—¢ã«çµ±ä¸€ã•ã‚ŒãŸåˆ—åã‚’ä½¿ç”¨
+        y = y_coord
+      )
+    
+    # åº§æ¨™ç¯„å›²ï¼ˆå°‘ã—ãƒžãƒ¼ã‚¸ãƒ³ã‚’ä»˜ã‘ã‚‹ï¼‰
+    x_range <- range(all_cells_sample$x, na.rm = TRUE)
+    y_range <- range(all_cells_sample$y, na.rm = TRUE)
+    x_margin <- diff(x_range) * 0.05
+    y_margin <- diff(y_range) * 0.05
+    x_lim <- c(x_range[1] - x_margin, x_range[2] + x_margin)
+    y_lim <- c(y_range[1] - y_margin, y_range[2] + y_margin)
+    
+    # â˜… èƒŒæ™¯ã¨å‰æ™¯ã‚’åˆ†ã‘ã‚‹ï¼ˆã“ã“ãŒé‡è¦ï¼ï¼‰
+    # èƒŒæ™¯ï¼šå…¨ç´°èƒžã‚’è–„ã„ã‚°ãƒ¬ãƒ¼ï¼ˆå¿…è¦ãªã‚‰é–“å¼•ãï¼‰
+    bg <- all_cells_sample
+    if(nrow(bg) > 80000) bg <- dplyr::slice_sample(bg, n = 80000)
+    
+    # å‰æ™¯ï¼šç™ºç¾>0ã®ç´°èƒžã ã‘è‰²ä»˜ãã§é‡ã­ã‚‹
+    fg <- spatial_data %>%
+      dplyr::mutate(expr = .data[[gene]]) %>%
+      dplyr::filter(expr > 0)
+    
+    cat(sprintf("  %s: %d positive cells (%.1f%%)\n", 
+                smp, nrow(fg), nrow(fg)/nrow(spatial_data)*100))
+    
+    # ãƒ—ãƒ­ãƒƒãƒˆä½œæˆ
+    p <- ggplot() +
+      # èƒŒæ™¯ï¼šçµ„ç¹”å½¢çŠ¶ã‚’è–„ãè¡¨ç¤º
+      geom_point(
+        data = bg,
+        aes(x = x, y = y),
+        color = "grey80",
+        size = 0.15,
+        alpha = 0.15
+      ) +
+      # å‰æ™¯ï¼šç™ºç¾ç´°èƒžã®ã¿å¼·èª¿
+      geom_point(
+        data = fg,
+        aes(x = x_coord, y = y_coord, color = expr),
+        size = 0.6,
+        alpha = 0.9
+      ) +
+      # â˜… 0ã‹ã‚‰ã®ã‚«ãƒ©ãƒ¼ã‚¹ã‚±ãƒ¼ãƒ«
+      scale_color_viridis_c(
+        option = "magma",
+        name = "Expression",
+        limits = c(0, expr_max),  # â˜… 0ã‹ã‚‰
+        na.value = "grey80"
+      ) +
+      scale_x_continuous(limits = x_lim, expand = c(0, 0)) +
+      scale_y_continuous(limits = y_lim, expand = c(0, 0)) +
+      labs(
+        title = paste0(smp, " (", cond, ")"),
+        x = "X coordinate",
+        y = "Y coordinate"
+      ) +
+      theme_publication() +
+      theme(
+        panel.background = element_rect(fill = "white", color = "black"),
+        legend.position = "right",
+        aspect.ratio = 1
+      )
+    
+    sample_plots[[smp]] <- p
+  }
+  
+  # éºä¼å­ã”ã¨ã«4ã‚µãƒ³ãƒ—ãƒ«ã‚’é…ç½®
+  gene_panel <- wrap_plots(sample_plots, ncol = 2) +
+    plot_annotation(
+      title = paste0(gene, " Spatial Expression"),
+      theme = theme(plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
+    )
+  
+  spatial_plots[[gene]] <- gene_panel
+}
+
+# å…¨éºä¼å­ã®ãƒ‘ãƒãƒ«ã‚’ä¿å­˜
+for(gene in available_genes) {
+  ggsave(
+    filename = file.path(output_dir, "Supplemental_Figure5", paste0("Supplemental_Figure5C_Spatial_", gene, ".pdf")),
+    plot = spatial_plots[[gene]],
+    width = 18,
+    height = 14
+  )
+  
+  ggsave(
+    filename = file.path(output_dir, "Supplemental_Figure5", paste0("Supplemental_Figure5C_Spatial_", gene, ".png")),
+    plot = spatial_plots[[gene]],
+    width = 18,
+    height = 14,
+    dpi = 600  # Spatial plots use higher DPI
+  )
+}
+
+# æœ€åˆã®éºä¼å­ã®ã¿è¡¨ç¤º
+print(spatial_plots[[1]])
+
+cat("âœ… Supplemental Figure 5C saved for all genes\n")
+```
+---
+
+# 8. Supplemental Figure 5D: CosMx Co-expression Analysis
+
+```{r figure5d_cosmx_coexpression, fig.width=14, fig.height=6}
+cat("=== Supplemental Figure 5D: Co-expression Analysis ===\n")
+
+# CXCL9ã¨CXCL10ãŒä¸¡æ–¹åˆ©ç”¨å¯èƒ½ãªå ´åˆã®ã¿å®Ÿè¡Œ
+if(all(c("CXCL9", "CXCL10") %in% available_genes)) {
+  
+  # CXCR3ãŒåˆ©ç”¨å¯èƒ½ãªå ´åˆ
+  if("CXCR3" %in% available_genes) {
+    
+    # CXCR3 vs CXCL9
+    p1 <- ggplot(expr_data, aes(x = CXCL9, y = CXCR3, color = condition)) +
+      geom_point(alpha = 0.3, size = 1) +
+      geom_smooth(method = "lm", se = TRUE, linetype = "dashed", size = 0.8) +
+      scale_color_manual(values = condition_colors) +
+      labs(
+        title = "CXCR3 vs CXCL9",
+        x = "CXCL9 Expression",
+        y = "CXCR3 Expression"
+      ) +
+      theme_publication() +
+      theme(legend.position = "bottom")
+    
+    # CXCR3 vs CXCL10
+    p2 <- ggplot(expr_data, aes(x = CXCL10, y = CXCR3, color = condition)) +
+      geom_point(alpha = 0.3, size = 1) +
+      geom_smooth(method = "lm", se = TRUE, linetype = "dashed", size = 0.8) +
+      scale_color_manual(values = condition_colors) +
+      labs(
+        title = "CXCR3 vs CXCL10",
+        x = "CXCL10 Expression",
+        y = "CXCR3 Expression"
+      ) +
+      theme_publication() +
+      theme(legend.position = "bottom")
+    
+    figure_5d <- p1 | p2
+    
+    # ç›¸é–¢ä¿‚æ•°è¨ˆç®—
+    cor_results <- expr_data %>%
+      dplyr::group_by(condition) %>%
+      dplyr::summarise(
+        CXCR3_CXCL9_cor = cor(CXCR3, CXCL9, method = "spearman", use = "complete.obs"),
+        CXCR3_CXCL10_cor = cor(CXCR3, CXCL10, method = "spearman", use = "complete.obs"),
+        .groups = "drop"
+      )
+    
+    cat("\nSpearman correlation by condition:\n")
+    print(cor_results)
+    
+  } else {
+    # CXCR3ãŒç„¡ã„å ´åˆã¯CXCL9 vs CXCL10ã®ã¿
+    figure_5d <- ggplot(expr_data, aes(x = CXCL9, y = CXCL10, color = condition)) +
+      geom_point(alpha = 0.3, size = 1) +
+      geom_smooth(method = "lm", se = TRUE, linetype = "dashed", size = 0.8) +
+      scale_color_manual(values = condition_colors) +
+      labs(
+        title = "CXCL9 vs CXCL10",
+        x = "CXCL9 Expression",
+        y = "CXCL10 Expression"
+      ) +
+      theme_publication() +
+      theme(legend.position = "bottom")
+    
+    cor_results <- expr_data %>%
+      dplyr::group_by(condition) %>%
+      dplyr::summarise(
+        CXCL9_CXCL10_cor = cor(CXCL9, CXCL10, method = "spearman", use = "complete.obs"),
+        .groups = "drop"
+      )
+    
+    cat("\nSpearman correlation by condition:\n")
+    print(cor_results)
+  }
+  
+  print(figure_5d)
+  
+  # ä¿å­˜
+  ggsave(
+    filename = file.path(output_dir, "Supplemental_Figure5", "Supplemental_Figure5D_CosMx_Coexpression.pdf"),
+    plot = figure_5d,
+    width = 14,
+    height = 6
+  )
+  
+  ggsave(
+    filename = file.path(output_dir, "Supplemental_Figure5", "Supplemental_Figure5D_CosMx_Coexpression.png"),
+    plot = figure_5d,
+    width = 14,
+    height = 6,
+    dpi = 300
+  )
+  
+  write.csv(
+    cor_results,
+    file.path(output_dir, "Statistics", "Supplemental_Figure5D_correlation_results.csv"),
+    row.names = FALSE
+  )
+  
+  cat("âœ… Supplemental Figure 5D saved\n")
+  
+} else {
+  cat("âš ï¸ Both CXCL9 and CXCL10 are required for co-expression analysis\n")
+}
+```
+
+---
+
+# 9. Supplemental Figure 5E: CosMx Positive Cell Proportion
+
+```{r figure5e_cosmx_proportion, fig.width=14, fig.height=8}
+cat("=== Supplemental Figure 5E: Positive Cell Proportion ===\n")
+
+# é™½æ€§ç´°èƒžã®å®šç¾©ï¼ˆExpression > 0ï¼‰
+proportion_data <- expr_data %>%
+  dplyr::select(all_of(c(available_genes, "condition", "major_celltype"))) %>%
+  dplyr::filter(major_celltype != "Other") %>%
+  tidyr::pivot_longer(
+    cols = all_of(available_genes),
+    names_to = "Gene",
+    values_to = "Expression"
+  ) %>%
+  dplyr::mutate(Positive = Expression > 0) %>%
+  dplyr::group_by(Gene, condition, major_celltype) %>%
+  dplyr::summarise(
+    Total = dplyr::n(),
+    Positive_n = sum(Positive),
+    Proportion = Positive_n / Total * 100,
+    .groups = "drop"
+  )
+
+# Heatmapä½œæˆ
+heatmap_plots <- list()
+
+for(gene in available_genes) {
+  gene_data <- proportion_data %>%
+    dplyr::filter(Gene == gene)
+  
+  p <- ggplot(gene_data, aes(x = condition, y = major_celltype, fill = Proportion)) +
+    geom_tile(color = "white", size = 0.5) +
+    geom_text(aes(label = sprintf("%.1f%%", Proportion)), 
+              color = "black", size = 3.5, fontface = "bold") +
+    scale_fill_viridis(option = "plasma", name = "% Positive") +
+    labs(
+      title = paste0(gene, " Positive Cells"),
+      x = "Condition",
+      y = "Cell Type"
+    ) +
+    theme_publication() +
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1),
+      legend.position = "right"
+    )
+  
+  heatmap_plots[[gene]] <- p
+}
+
+# ãƒ‘ãƒãƒ«çµ±åˆ
+figure_5e <- wrap_plots(heatmap_plots, ncol = length(available_genes)) +
+  plot_annotation(
+    title = "Supplemental Figure 5E: Proportion of Positive Cells (CosMx)",
+    theme = theme(plot.title = element_text(size = 16, face = "bold", hjust = 0.5))
+  )
+
+print(figure_5e)
+
+# ä¿å­˜
+ggsave(
+  filename = file.path(output_dir, "Supplemental_Figure5", "Supplemental_Figure5E_CosMx_Proportion.pdf"),
+  plot = figure_5e,
+  width = 14,
+  height = 8
+)
+
+ggsave(
+  filename = file.path(output_dir, "Supplemental_Figure5", "Supplemental_Figure5E_CosMx_Proportion.png"),
+  plot = figure_5e,
+  width = 14,
+  height = 8,
+  dpi = 300
+)
+
+write.csv(
+  proportion_data,
+  file.path(output_dir, "Statistics", "Supplemental_Figure5E_proportion_data.csv"),
+  row.names = FALSE
+)
+
+cat("âœ… Supplemental Figure 5E saved\n")
+```
+
+---
+
+# 10. scFFPE Analysis Panels (Supplemental Figure 5F-H)
+
+## Supplemental Figure 5F: scFFPE Violin Plots
+
+```{r figure5f_scffpe_violin, fig.width=14, fig.height=10}
+if(scffpe_available) {
+  cat("=== Supplemental Figure 5F: scFFPE Violin Plots ===\n")
+  
+  # ãƒ‡ãƒ¼ã‚¿æº–å‚™
+  scffpe_violin_data <- scffpe_expr %>%
+    dplyr::select(all_of(c(available_genes, "group"))) %>%
+    tidyr::pivot_longer(
+      cols = all_of(available_genes),
+      names_to = "Gene",
+      values_to = "Expression"
+    )
+  
+  # çµ±è¨ˆæ¤œå®š
+  scffpe_stat_results <- list()
+  for(gene in available_genes) {
+    gene_data <- scffpe_violin_data %>%
+      dplyr::filter(Gene == gene)
+    
+    comparisons <- list(
+      c("ICI-AKI", "Rejection"),
+      c("ICI-AKI", "Drug-induced_AKI")
+    )
+    
+    stat_test <- gene_data %>%
+      rstatix::wilcox_test(Expression ~ group, comparisons = comparisons) %>%
+      rstatix::add_significance() %>%
+      rstatix::add_xy_position(x = "group")
+    
+    scffpe_stat_results[[gene]] <- stat_test
+  }
+  
+  # Violin plotä½œæˆ
+  scffpe_violin_plots <- list()
+  
+  for(gene in available_genes) {
+    gene_data <- scffpe_violin_data %>%
+      dplyr::filter(Gene == gene)
+    
+    p <- ggplot(gene_data, aes(x = group, y = Expression, fill = group)) +
+      geom_violin(trim = FALSE, alpha = 0.7) +
+      geom_boxplot(width = 0.1, fill = "white", outlier.shape = NA) +
+      scale_fill_manual(values = condition_colors) +
+      labs(
+        title = paste0(gene, " (scFFPE)"),
+        x = NULL,
+        y = "Normalized Expression"
+      ) +
+      theme_publication() +
+      theme(
+        legend.position = "none",
+        axis.text.x = element_text(angle = 45, hjust = 1)
+      )
+    
+    if(!is.null(scffpe_stat_results[[gene]])) {
+      p <- p + 
+        ggpubr::stat_pvalue_manual(
+          scffpe_stat_results[[gene]],
+          label = "p.adj.signif",
+          tip.length = 0.01,
+          step.increase = 0.05,
+          hide.ns = FALSE
+        )
+    }
+    
+    scffpe_violin_plots[[gene]] <- p
+  }
+  
+  # ãƒ‘ãƒãƒ«çµ±åˆ
+  figure_5f <- wrap_plots(scffpe_violin_plots, ncol = length(available_genes)) +
+    plot_annotation(
+      title = "Supplemental Figure 5F: CXCR3-CXCL9/10 Expression by Group (scFFPE)",
+      theme = theme(plot.title = element_text(size = 16, face = "bold", hjust = 0.5))
+    )
+  
+  print(figure_5f)
+  
+  # ä¿å­˜
+  ggsave(
+    filename = file.path(output_dir, "Supplemental_Figure5", "Supplemental_Figure5F_scFFPE_Violin.pdf"),
+    plot = figure_5f,
+    width = 14,
+    height = 10
+  )
+  
+  ggsave(
+    filename = file.path(output_dir, "Supplemental_Figure5", "Supplemental_Figure5F_scFFPE_Violin.png"),
+    plot = figure_5f,
+    width = 14,
+    height = 10,
+    dpi = 300
+  )
+  
+  # çµ±è¨ˆçµæžœä¿å­˜
+for(gene in available_genes) {
+  stat_df <- as.data.frame(scffpe_stat_results[[gene]])
+  list_cols <- sapply(stat_df, is.list)
+  stat_df_clean <- stat_df[, !list_cols, drop = FALSE]
+  
+  write.csv(
+    stat_df_clean,
+    file.path(output_dir, "Statistics", paste0("Supplemental_Figure5F_scFFPE_", gene, "_stats.csv")),
+    row.names = FALSE
+  )
+}
+  
+  cat("âœ… Supplemental Figure 5F saved\n")
+} else {
+  cat("âš ï¸ Supplemental Figure 5F skipped (scFFPE data not available)\n")
+}
+```
+
+## Supplemental Figure 5G: scFFPE Cell Type-Specific Expression
+
+```{r figure5g_scffpe_celltype, fig.width=16, fig.height=12}
+if(scffpe_available) {
+  cat("=== Supplemental Figure 5G: scFFPE Cell Type-Specific Expression ===\n")
+  
+  # Major cell typeã§ã®ã‚°ãƒ«ãƒ¼ãƒ—åŒ–
+  scffpe_celltype_data <- scffpe_expr %>%
+    dplyr::select(all_of(c(available_genes, "group", "major_celltype"))) %>%
+    dplyr::filter(major_celltype != "Unknown" & major_celltype != "Other") %>%
+    tidyr::pivot_longer(
+      cols = all_of(available_genes),
+      names_to = "Gene",
+      values_to = "Expression"
+    )
+  
+  # Cell typeåˆ¥ã®Violin plot
+  scffpe_celltype_plots <- list()
+  
+  for(gene in available_genes) {
+    gene_data <- scffpe_celltype_data %>%
+      dplyr::filter(Gene == gene)
+    
+    p <- ggplot(gene_data, aes(x = major_celltype, y = Expression, fill = group)) +
+      geom_violin(position = position_dodge(0.8), trim = FALSE, alpha = 0.7) +
+      geom_boxplot(
+        position = position_dodge(0.8),
+        width = 0.2,
+        fill = "white",
+        outlier.shape = NA
+      ) +
+      scale_fill_manual(values = condition_colors) +
+      labs(
+        title = paste0(gene, " (scFFPE)"),
+        x = "Cell Type",
+        y = "Normalized Expression",
+        fill = "Group"
+      ) +
+      theme_publication() +
+      theme(
+        axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "bottom"
+      )
+    
+    scffpe_celltype_plots[[gene]] <- p
+  }
+  
+  # ãƒ‘ãƒãƒ«çµ±åˆ
+  figure_5g <- wrap_plots(scffpe_celltype_plots, ncol = 1) +
+    plot_annotation(
+      title = "Supplemental Figure 5G: Cell Type-Specific Expression (scFFPE)",
+      theme = theme(plot.title = element_text(size = 16, face = "bold", hjust = 0.5))
+    )
+  
+  print(figure_5g)
+  
+  # ä¿å­˜
+  ggsave(
+    filename = file.path(output_dir, "Supplemental_Figure5", "Supplemental_Figure5G_scFFPE_CellType.pdf"),
+    plot = figure_5g,
+    width = 16,
+    height = 12
+  )
+  
+  ggsave(
+    filename = file.path(output_dir, "Supplemental_Figure5", "Supplemental_Figure5G_scFFPE_CellType.png"),
+    plot = figure_5g,
+    width = 16,
+    height = 12,
+    dpi = 300
+  )
+  
+  cat("âœ… Supplemental Figure 5G saved\n")
+} else {
+  cat("âš ï¸ Supplemental Figure 5G skipped (scFFPE data not available)\n")
+}
+```
+
+## Supplemental Figure 5H: scFFPE UMAP Visualization
+
+```{r figure5h_scffpe_umap, fig.width=18, fig.height=6}
+if(scffpe_available) {
+  cat("=== Supplemental Figure 5H: scFFPE UMAP ===\n")
+  
+  # UMAPåº§æ¨™ç¢ºèª
+  if(!"UMAP_1" %in% colnames(scffpe@meta.data)) {
+    # UMAPãŒç„¡ã„å ´åˆã¯å®Ÿè¡Œ
+    cat("Running UMAP...\n")
+    scffpe <- RunUMAP(scffpe, dims = 1:30, reduction = "pca")
+  }
+  
+  # UMAP plotä½œæˆ
+  umap_plots <- list()
+  
+  for(gene in available_genes) {
+    p <- FeaturePlot(
+      scffpe,
+      features = gene,
+      reduction = "umap",
+      pt.size = 0.5
+    ) +
+      scale_color_viridis(option = "magma", name = "Expression") +
+      labs(title = paste0(gene, " (scFFPE)")) +
+      theme_publication() +
+      theme(
+        legend.position = "right",
+        axis.title = element_text(size = 12)
+      )
+    
+    umap_plots[[gene]] <- p
+  }
+  
+  # ãƒ‘ãƒãƒ«çµ±åˆ
+  figure_5h <- wrap_plots(umap_plots, ncol = length(available_genes)) +
+    plot_annotation(
+      title = "Supplemental Figure 5H: UMAP Expression (scFFPE)",
+      theme = theme(plot.title = element_text(size = 16, face = "bold", hjust = 0.5))
+    )
+  
+  print(figure_5h)
+  
+  # ä¿å­˜
+  ggsave(
+    filename = file.path(output_dir, "Supplemental_Figure5", "Supplemental_Figure5H_scFFPE_UMAP.pdf"),
+    plot = figure_5h,
+    width = 18,
+    height = 6
+  )
+  
+  ggsave(
+    filename = file.path(output_dir, "Supplemental_Figure5", "Supplemental_Figure5H_scFFPE_UMAP.png"),
+    plot = figure_5h,
+    width = 18,
+    height = 6,
+    dpi = 300
+  )
+  
+  cat("âœ… Supplemental Figure 5H saved\n")
+} else {
+  cat("âš ï¸ Supplemental Figure 5H skipped (scFFPE data not available)\n")
+}
+```
+
+---
+
+# 11. CosMx vs scFFPE Comparison
+
+```{r cosmx_scffpe_comparison}
+if(scffpe_available) {
+  cat("=== Creating CosMx vs scFFPE Comparison ===\n")
+  
+  # Conditionåˆ¥ã®ç™ºç¾çµ±è¨ˆæ¯”è¼ƒ
+  cosmx_stats <- expr_data %>%
+    dplyr::select(all_of(c(available_genes, "condition"))) %>%
+    tidyr::pivot_longer(
+      cols = all_of(available_genes),
+      names_to = "Gene",
+      values_to = "Expression"
+    ) %>%
+    dplyr::group_by(Gene, condition) %>%
+    dplyr::summarise(
+      Platform = "CosMx",
+      mean_expr = mean(Expression, na.rm = TRUE),
+      median_expr = median(Expression, na.rm = TRUE),
+      pct_positive = sum(Expression > 0) / dplyr::n() * 100,
+      .groups = "drop"
+    )
+  
+  scffpe_stats <- scffpe_expr %>%
+    dplyr::select(all_of(c(available_genes, "group"))) %>%
+    tidyr::pivot_longer(
+      cols = all_of(available_genes),
+      names_to = "Gene",
+      values_to = "Expression"
+    ) %>%
+    dplyr::rename(condition = group) %>%
+    dplyr::group_by(Gene, condition) %>%
+    dplyr::summarise(
+      Platform = "scFFPE",
+      mean_expr = mean(Expression, na.rm = TRUE),
+      median_expr = median(Expression, na.rm = TRUE),
+      pct_positive = sum(Expression > 0) / dplyr::n() * 100,
+      .groups = "drop"
+    )
+  
+  # çµ±åˆ
+  combined_stats <- rbind(cosmx_stats, scffpe_stats)
+  
+  # æ¯”è¼ƒãƒ—ãƒ­ãƒƒãƒˆï¼šMean expression
+  p_mean_comparison <- ggplot(combined_stats, 
+                               aes(x = condition, y = mean_expr, fill = Platform)) +
+    geom_bar(stat = "identity", position = "dodge") +
+    facet_wrap(~Gene, scales = "free_y") +
+    scale_fill_manual(values = c("CosMx" = "#E64B35", "scFFPE" = "#4DBBD5")) +
+    labs(
+      title = "CosMx vs scFFPE: Mean Expression Comparison",
+      x = "Condition",
+      y = "Mean Expression"
+    ) +
+    theme_publication() +
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1),
+      legend.position = "bottom"
+    )
+  
+  print(p_mean_comparison)
+  
+  # æ¯”è¼ƒãƒ—ãƒ­ãƒƒãƒˆï¼š% Positive
+  p_pct_comparison <- ggplot(combined_stats,
+                              aes(x = condition, y = pct_positive, fill = Platform)) +
+    geom_bar(stat = "identity", position = "dodge") +
+    facet_wrap(~Gene) +
+    scale_fill_manual(values = c("CosMx" = "#E64B35", "scFFPE" = "#4DBBD5")) +
+    labs(
+      title = "CosMx vs scFFPE: % Positive Cells Comparison",
+      x = "Condition",
+      y = "% Positive Cells"
+    ) +
+    theme_publication() +
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1),
+      legend.position = "bottom"
+    )
+  
+  print(p_pct_comparison)
+  
+  # ä¿å­˜
+  ggsave(
+    filename = file.path(output_dir, "Supplemental_Figure5", "CosMx_vs_scFFPE_mean_expression.pdf"),
+    plot = p_mean_comparison,
+    width = 14,
+    height = 10
+  )
+  
+  ggsave(
+    filename = file.path(output_dir, "Supplemental_Figure5", "CosMx_vs_scFFPE_pct_positive.pdf"),
+    plot = p_pct_comparison,
+    width = 14,
+    height = 10
+  )
+  
+  # çµ±è¨ˆãƒ†ãƒ¼ãƒ–ãƒ«ä¿å­˜
+  write.csv(
+    combined_stats,
+    file.path(output_dir, "Statistics", "CosMx_vs_scFFPE_comparison.csv"),
+    row.names = FALSE
+  )
+  
+  cat("âœ… CosMx vs scFFPE comparison completed\n")
+} else {
+  cat("âš ï¸ CosMx vs scFFPE comparison skipped (scFFPE data not available)\n")
+}
+```
+
+---
+
+# 12. Statistical Summary
+
+```{r statistical_summary}
+cat("=== Comprehensive Statistical Summary ===\n")
+
+# CosMx Conditionåˆ¥ã®ç™ºç¾çµ±è¨ˆ
+condition_stats <- expr_data %>%
+  dplyr::select(all_of(c(available_genes, "condition"))) %>%
+  tidyr::pivot_longer(
+    cols = all_of(available_genes),
+    names_to = "Gene",
+    values_to = "Expression"
+  ) %>%
+  dplyr::group_by(Gene, condition) %>%
+  dplyr::summarise(
+    n_cells = dplyr::n(),
+    n_positive = sum(Expression > 0),
+    pct_positive = round(n_positive / n_cells * 100, 2),
+    mean_expr = mean(Expression, na.rm = TRUE),
+    median_expr = median(Expression, na.rm = TRUE),
+    sd_expr = sd(Expression, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+cat("\nCosMx condition-wise expression statistics:\n")
+print(condition_stats)
+
+# CosMx Cell typeåˆ¥ã®ç™ºç¾çµ±è¨ˆ
+celltype_stats <- expr_data %>%
+  dplyr::filter(major_celltype != "Other") %>%
+  dplyr::select(all_of(c(available_genes, "major_celltype", "condition"))) %>%
+  tidyr::pivot_longer(
+    cols = all_of(available_genes),
+    names_to = "Gene",
+    values_to = "Expression"
+  ) %>%
+  dplyr::group_by(Gene, major_celltype, condition) %>%
+  dplyr::summarise(
+    n_cells = dplyr::n(),
+    n_positive = sum(Expression > 0),
+    pct_positive = round(n_positive / n_cells * 100, 2),
+    mean_expr = mean(Expression, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+cat("\nCosMx cell type-wise expression statistics:\n")
+print(head(celltype_stats, 20))
+
+# ä¿å­˜
+write.csv(
+  condition_stats,
+  file.path(output_dir, "Statistics", "CosMx_condition_expression_stats.csv"),
+  row.names = FALSE
+)
+
+write.csv(
+  celltype_stats,
+  file.path(output_dir, "Statistics", "CosMx_celltype_expression_stats.csv"),
+  row.names = FALSE
+)
+
+cat("âœ… Statistical summaries saved\n")
+```
+
+---
+
+# 13. Summary & Interpretation
+
+```{r summary}
+cat("\n", strrep("=", 80), "\n")
+cat("ANALYSIS COMPLETE: CXCR3-CXCL9/10 Axis (CosMx + scFFPE)\n")
+cat(strrep("=", 80), "\n\n")
+
+cat("ðŸ“Š Summary:\n")
+cat(sprintf("  Analyzed genes: %s\n", paste(available_genes, collapse = ", ")))
+cat(sprintf("  CosMx cells: %d\n", nrow(expr_data)))
+if(scffpe_available) {
+  cat(sprintf("  scFFPE cells: %d\n", nrow(scffpe_expr)))
+}
+cat(sprintf("  Conditions: %s\n", paste(unique(expr_data$condition), collapse = ", ")))
+
+cat("\nðŸ“ Output files:\n")
+cat(sprintf("  Main directory: %s\n", output_dir))
+cat("\n  CosMx Panels (Supplemental Figure 5A-E):\n")
+cat("    5A: Violin plots by condition\n")
+cat("    5B: Cell type-specific expression\n")
+cat("    5C: Spatial distribution (per gene)\n")
+if(all(c("CXCL9", "CXCL10") %in% available_genes)) {
+  cat("    5D: Co-expression analysis\n")
+}
+cat("    5E: Positive cell proportion heatmap\n")
+
+if(scffpe_available) {
+  cat("\n  scFFPE Panels (Supplemental Figure 5F-H):\n")
+  cat("    5F: Violin plots by group\n")
+  cat("    5G: Cell type-specific expression\n")
+  cat("    5H: UMAP expression\n")
+  cat("\n  Cross-platform Analysis:\n")
+  cat("    CosMx vs scFFPE comparison plots\n")
+  cat("    Combined statistics table\n")
+}
+
+cat("\nðŸ’¡ Key findings to report:\n")
+cat("  CosMx Analysis:\n")
+cat("    1. Condition-specific expression patterns\n")
+cat("    2. Cell type-specific expression profiles\n")
+cat("    3. Spatial distribution patterns\n")
+cat("    4. Ligand-receptor co-expression relationships\n")
+cat("    5. Proportion of positive cells across conditions\n")
+
+if(scffpe_available) {
+  cat("\n  scFFPE Analysis:\n")
+  cat("    6. Single-cell resolution expression patterns\n")
+  cat("    7. Cell type-specific expression profiles\n")
+  cat("    8. UMAP-based expression visualization\n")
+  cat("\n  Cross-platform Validation:\n")
+  cat("    9. Expression consistency between platforms\n")
+  cat("    10. Platform-specific sensitivities\n")
+}
+
+cat("\n", strrep("=", 80), "\n")
+cat("âœ… All analyses completed successfully\n")
+if(scffpe_available) {
+  cat("âœ… Both CosMx and scFFPE data analyzed\n")
+} else {
+  cat("âš ï¸ Only CosMx data analyzed (scFFPE data not available)\n")
+}
+cat(strrep("=", 80), "\n\n")
+```
+
+---
+
+**Analysis completed**: `r Sys.time()`

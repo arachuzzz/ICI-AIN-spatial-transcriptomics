@@ -1,0 +1,1433 @@
+---
+title: "CosMx Comprehensive Cell Type Annotation from Scratch"
+author: "Kidney ICI-AKI Analysis Project"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 4
+    code_folding: show
+    theme: cosmo
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  fig.width = 14,
+  fig.height = 10,
+  dpi = 300
+)
+```
+
+# ãƒ—ãƒ­ã‚¸ã‚§ã‚¯ãƒˆæ¦‚è¦
+
+**ç›®çš„**: CosMx 1,000éºä¼å­ãƒ‘ãƒãƒ«ã‚’æ´»ç”¨ã—ãŸè…Žè‡“çµ„ç¹”ã®åŒ…æ‹¬çš„ç´°èƒžã‚¿ã‚¤ãƒ—ã‚¢ãƒŽãƒ†ãƒ¼ã‚·ãƒ§ãƒ³
+
+**å…¥åŠ›ãƒ‡ãƒ¼ã‚¿**: 
+- File: `20251006 cosmx_sctransform_harmony_merged.rds`
+- Cells: 319,141ç´°èƒž
+- Samples: S0 (Rejection), S1/S3 (ICI-AKI), S2 (Drug-AKI)
+- Normalization: SCTransform + Harmony batch correction
+
+**ã‚¢ãƒ—ãƒ­ãƒ¼ãƒ**: 
+1. CosMx Universal Cell Characterization Panel (1,000éºä¼å­)ã®å®Œå…¨æ´»ç”¨
+2. Module score-basedéšŽå±¤çš„åˆ†é¡ž
+3. æ—¢çŸ¥ãƒžãƒ¼ã‚«ãƒ¼éºä¼å­ã«ã‚ˆã‚‹æ¤œè¨¼
+4. ç©ºé–“æƒ…å ±ã‚’ç”¨ã„ãŸå¦¥å½“æ€§ç¢ºèª
+
+**æœŸå¾…ã•ã‚Œã‚‹æˆæžœ**:
+- Major cell types: 5-8ã‚¿ã‚¤ãƒ—
+- Detailed cell types: 20-30ã‚¿ã‚¤ãƒ—
+- ä¿¡é ¼æ€§ã®é«˜ã„ã‚¢ãƒŽãƒ†ãƒ¼ã‚·ãƒ§ãƒ³ï¼ˆç©ºé–“æ¤œè¨¼æ¸ˆã¿ï¼‰
+
+---
+
+# 1. ç’°å¢ƒæº–å‚™ {.tabset .tabset-fade}
+
+## ãƒ©ã‚¤ãƒ–ãƒ©ãƒªèª­ã¿è¾¼ã¿
+
+```{r load_libraries}
+cat("=== Loading Required Libraries ===\n")
+
+suppressPackageStartupMessages({
+  library(Seurat)
+  library(SeuratObject)
+  library(dplyr)
+  library(tidyr)
+  library(ggplot2)
+  library(patchwork)
+  library(viridis)
+  library(RColorBrewer)
+  library(pheatmap)
+  library(readxl)
+})
+
+cat("âœ… All libraries loaded\n")
+cat("Seurat version:", as.character(packageVersion("Seurat")), "\n")
+cat("R version:", R.version.string, "\n\n")
+```
+
+## ãƒ‡ã‚£ãƒ¬ã‚¯ãƒˆãƒªè¨­å®š
+
+```{r setup_directories}
+cat("=== Setting up Directories ===\n")
+
+# Project root
+project_root <- "/Users/HiroyukiArai/Documents/2025å¹´ç•™å­¦/ç ”ç©¶é–¢é€£/ç ”ç©¶çµæžœ/202509 cosmx-kidney-project"
+
+# Data directory
+data_dir <- file.path(project_root, "data/processed")
+
+# Output directory
+output_dir <- file.path(project_root, "results/figures/20251117_Comprehensive_Annotation")
+dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+
+# Gene panel file
+panel_file <- "/Users/HiroyukiArai/Documents/å¤§å­¦é™¢/ç ”ç©¶çµæžœ/2024æ‘ä¸Šå…ˆç”ŸCosMX/CosMxâ„¢ Human Universal Cell Characterization Panel Gene Target List.xlsx"
+
+cat("Data directory:", data_dir, "\n")
+cat("Output directory:", output_dir, "\n")
+cat("Panel file:", panel_file, "\n\n")
+```
+
+## ãƒ‡ãƒ¼ã‚¿èª­ã¿è¾¼ã¿
+
+```{r load_data}
+cat("=== Loading CosMx Data ===\n")
+
+# Load SCTransform + Harmony integrated data
+cosmx_file <- file.path(data_dir, "20251006 cosmx_sctransform_harmony_merged.rds")
+
+if(!file.exists(cosmx_file)) {
+  stop("âŒ Data file not found: ", cosmx_file)
+}
+
+cat("Loading data (this may take a few minutes)...\n")
+cosmx <- readRDS(cosmx_file)
+
+cat("âœ… Data loaded successfully\n")
+cat("Total cells:", ncol(cosmx), "\n")
+cat("Total genes:", nrow(cosmx), "\n")
+cat("Samples:", paste(unique(cosmx$sample), collapse = ", "), "\n")
+cat("Assays:", names(cosmx@assays), "\n")
+cat("Reductions:", names(cosmx@reductions), "\n\n")
+
+# Set default assay
+DefaultAssay(cosmx) <- "SCT"
+cat("âœ… Default assay set to SCT\n\n")
+```
+
+## CosMxãƒ‘ãƒãƒ«éºä¼å­ãƒªã‚¹ãƒˆèª­ã¿è¾¼ã¿
+
+```{r load_cosmx_panel}
+cat("=== Loading CosMx Gene Panel ===\n")
+
+# Read gene list from Annotations sheet
+cosmx_panel_df <- read_excel(panel_file, sheet = "Annotations", skip = 1) 
+
+# Extract gene names (first column after header)
+cosmx_genes_panel <- cosmx_panel_df[[1]]  # Header already skipped with skip=1
+cosmx_genes_panel <- cosmx_genes_panel[!is.na(cosmx_genes_panel)]
+cosmx_genes_panel <- cosmx_genes_panel[cosmx_genes_panel != "Gene"]
+
+cat("âœ… CosMx panel genes loaded\n")
+cat("Total panel genes:", length(cosmx_genes_panel), "\n")
+
+# Check overlap with our data
+genes_in_data <- intersect(cosmx_genes_panel, rownames(cosmx))
+cat("Genes detected in data:", length(genes_in_data), 
+    sprintf("(%.1f%%)\n", length(genes_in_data)/length(cosmx_genes_panel)*100))
+
+# Load functional annotations
+cosmx_annotations <- read_excel(panel_file, sheet = "Annotations", skip = 1)
+colnames(cosmx_annotations)[1] <- "Gene"
+
+
+# Extract key functional categories
+functional_categories <- colnames(cosmx_annotations)[4:ncol(cosmx_annotations)]
+cat("Functional categories:", length(functional_categories), "\n")
+cat("Examples:", paste(head(functional_categories, 10), collapse = ", "), "...\n\n")
+```
+
+---
+
+# 2. CosMxãƒ‘ãƒãƒ«è…Žè‡“ç‰¹ç•°çš„ãƒžãƒ¼ã‚«ãƒ¼å®šç¾© {.tabset .tabset-fade}
+
+## ä¸Šçš®ç´°èƒžãƒžãƒ¼ã‚«ãƒ¼ - åˆæœŸå®šç¾©ã¨åˆ¶ç´„ã®ç¢ºèª
+```{r epithelial_markers_initial_check, fig.width=12, fig.height=6}
+cat("=== Defining Epithelial Cell Markers - Initial Attempt ===\n")
+cat("Testing classical nephron segment markers...\n\n")
+
+# å¤å…¸çš„ãªè…Žè‡“ä¸Šçš®ãƒžãƒ¼ã‚«ãƒ¼ï¼ˆç†æƒ³çš„ãªãƒªã‚¹ãƒˆï¼‰
+epithelial_markers_classical <- list(
+  # General epithelial
+  Epithelial_General = c("EPCAM", "KRT18", "KRT8", "KRT19", "CDH1"),
+  
+  # Proximal tubule
+  Proximal_Tubule = c("LRP2", "SLC34A1", "SLC5A2", "CUBN", "SLC22A6", 
+                      "SLC22A8", "HAVCR1"),
+  
+  # Distal tubule
+  Distal_Tubule = c("SLC12A3", "CALB1", "TRPM6", "PVALB"),
+  
+  # Thick ascending limb
+  Thick_Ascending_Limb = c("SLC12A1", "UMOD", "CLDN10", "CLDN16"),
+  
+  # Collecting duct
+  Collecting_Duct = c("AQP2", "AQP3", "AQP4", "ATP6V1B1", "ATP6V0D2", 
+                      "SLC26A4", "SCNN1A", "SCNN1B", "SCNN1G"),
+  
+  # Podocyte (Glomerulus)
+  Podocyte = c("NPHS1", "NPHS2", "PODXL", "WT1", "SYNPO", "MAGI2"),
+  
+  # Parietal epithelial cell
+  Parietal_Epithelial = c("PAX8", "CDH1", "CLDN1")
+)
+
+# Check availability in data
+epithelial_availability <- data.frame()
+epithelial_available <- list()
+
+for(cell_type in names(epithelial_markers_classical)) {
+  genes <- epithelial_markers_classical[[cell_type]]
+  available <- intersect(genes, rownames(cosmx))
+  epithelial_available[[cell_type]] <- available
+  
+  epithelial_availability <- rbind(epithelial_availability, data.frame(
+    Cell_Type = cell_type,
+    Total_Markers = length(genes),
+    Available_Markers = length(available),
+    Availability_Pct = round(length(available) / length(genes) * 100, 1),
+    Available_Genes = paste(available, collapse = ", ")
+  ))
+  
+  cat(sprintf("%-25s: %2d/%2d genes (%.1f%%) - %s\n", 
+              cell_type, 
+              length(available), 
+              length(genes),
+              length(available) / length(genes) * 100,
+              ifelse(length(available) > 0, 
+                     paste(available, collapse = ", "), 
+                     "None")))
+}
+
+cat("\n")
+
+# Save availability table
+write.csv(epithelial_availability, 
+          file.path(output_dir, "epithelial_marker_availability.csv"),
+          row.names = FALSE)
+
+# Visualization of marker availability
+library(ggplot2)
+
+# Create summary for plotting
+epi_summary <- epithelial_availability %>%
+  select(Cell_Type, Available_Markers, Total_Markers) %>%
+  mutate(
+    Missing_Markers = Total_Markers - Available_Markers,
+    Availability_Status = case_when(
+      Available_Markers == 0 ~ "No markers (0%)",
+      Available_Markers == 1 ~ "Single marker only",
+      Available_Markers >= 2 & Available_Markers < Total_Markers ~ "Partial",
+      Available_Markers == Total_Markers ~ "Complete"
+    )
+  )
+
+# Stacked bar plot
+p_availability <- ggplot(epi_summary, 
+                         aes(x = reorder(Cell_Type, Available_Markers))) +
+  geom_bar(aes(y = Available_Markers, fill = "Available"), 
+           stat = "identity", alpha = 0.7) +
+  geom_bar(aes(y = Missing_Markers), 
+           stat = "identity", fill = "grey70", alpha = 0.5,
+           position = position_stack(vjust = 1, reverse = FALSE)) +
+  geom_text(aes(y = Total_Markers, 
+                label = sprintf("%d/%d", Available_Markers, Total_Markers)),
+            hjust = -0.2, size = 3.5, fontface = "bold") +
+  coord_flip() +
+  scale_fill_manual(values = c("Available" = "#2E7D32")) +
+  labs(
+    title = "Epithelial Marker Availability in CosMx Panel",
+    subtitle = "Classical nephron segment markers are severely limited",
+    x = "Cell Type",
+    y = "Number of Markers",
+    fill = NULL
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0),
+    plot.subtitle = element_text(color = "red", hjust = 0),
+    legend.position = "bottom",
+    panel.grid.major.y = element_blank()
+  ) +
+  ylim(0, max(epi_summary$Total_Markers) * 1.15)
+
+print(p_availability)
+
+ggsave(
+  file.path(output_dir, "epithelial_marker_availability.png"),
+  p_availability, width = 10, height = 6, dpi = 300
+)
+
+cat("âœ… Marker availability plot saved\n\n")
+```
+
+```{r epithelial_markers_limitation_summary}
+cat("=== CRITICAL FINDING: Insufficient Nephron Segment Markers ===\n\n")
+
+# Identify problematic subtypes
+insufficient_subtypes <- epithelial_availability %>%
+  filter(Available_Markers < 2) %>%
+  arrange(Available_Markers)
+
+cat("âš ï¸  Cell types with insufficient markers (< 2 genes):\n")
+for(i in 1:nrow(insufficient_subtypes)) {
+  cat(sprintf("   %d. %-25s: %d/%d markers (%.0f%%)\n",
+              i,
+              insufficient_subtypes$Cell_Type[i],
+              insufficient_subtypes$Available_Markers[i],
+              insufficient_subtypes$Total_Markers[i],
+              insufficient_subtypes$Availability_Pct[i]))
+}
+
+cat("\nðŸ“Š Summary statistics:\n")
+cat(sprintf("   - Total epithelial subtypes: %d\n", nrow(epithelial_availability)))
+cat(sprintf("   - Subtypes with 0 markers: %d\n", 
+            sum(epithelial_availability$Available_Markers == 0)))
+cat(sprintf("   - Subtypes with 1 marker: %d\n", 
+            sum(epithelial_availability$Available_Markers == 1)))
+cat(sprintf("   - Subtypes with â‰¥2 markers: %d\n", 
+            sum(epithelial_availability$Available_Markers >= 2)))
+
+cat("\nâš ï¸  CONCLUSION:\n")
+cat("   Classical nephron segment annotation (PT/TAL/DCT/CD/Podocyte) is\n")
+cat("   NOT FEASIBLE with the current CosMx 1K panel.\n\n")
+
+cat("âž¡ï¸  STRATEGY CHANGE:\n")
+cat("   1. Use broad 'Epithelial' category based on general markers\n")
+cat("   2. Reference markers (CALB1, AQP3) for visualization only\n")
+cat("   3. Future: Add cell STATE signatures from scFFPE analysis\n\n")
+```
+
+```{r epithelial_markers_revised_definition}
+cat("=== Revised Epithelial Marker Definition (Realistic Approach) ===\n\n")
+
+# Only use markers with sufficient coverage
+epithelial_markers_revised <- list(
+  # This is reliable - 5/5 markers available
+  Epithelial_General = epithelial_available$Epithelial_General
+)
+
+# Add reference markers (for visualization, not classification)
+reference_markers <- list()
+if(length(epithelial_available$Distal_Tubule) > 0) {
+  reference_markers$Reference_Distal <- epithelial_available$Distal_Tubule
+}
+if(length(epithelial_available$Collecting_Duct) > 0) {
+  reference_markers$Reference_Collecting <- epithelial_available$Collecting_Duct
+}
+
+cat("âœ… MARKERS FOR CLASSIFICATION:\n")
+for(marker_type in names(epithelial_markers_revised)) {
+  genes <- epithelial_markers_revised[[marker_type]]
+  cat(sprintf("   %-25s: %d genes (%s)\n",
+              marker_type,
+              length(genes),
+              paste(genes, collapse = ", ")))
+}
+
+cat("\nðŸ“‹ MARKERS FOR REFERENCE/VISUALIZATION ONLY:\n")
+if(length(reference_markers) > 0) {
+  for(marker_type in names(reference_markers)) {
+    genes <- reference_markers[[marker_type]]
+    cat(sprintf("   %-25s: %d genes (%s)\n",
+                marker_type,
+                length(genes),
+                paste(genes, collapse = ", ")))
+  }
+} else {
+  cat("   (None available)\n")
+}
+
+cat("\nðŸ’¡ RATIONALE:\n")
+cat("   Module scores require â‰¥2 genes for robustness.\n")
+cat("   Single-gene markers (CALB1, AQP3) are shown for reference\n")
+cat("   but NOT used for formal cell type classification.\n\n")
+
+cat("ðŸ“ FOR METHODS SECTION:\n")
+cat('   "Because the CosMx 1K panel contains only limited nephron\n')
+cat('    segment markers (0/7 PT, 0/4 TAL, 1/9 CD, 0/6 Podocyte),\n')
+cat('    we did not attempt precise nephron segment annotation and\n')
+cat('    instead treated tubular epithelial cells as a broad category."\n\n')
+```
+
+## å…ç–«ç´°èƒžãƒžãƒ¼ã‚«ãƒ¼
+
+```{r immune_markers}
+cat("=== Defining Immune Cell Markers ===\n")
+
+# Immune cell markers based on CosMx panel
+immune_markers <- list(
+  # Pan-immune
+  Immune_General = c("PTPRC"),  # CD45
+  
+  # T cells
+  T_cell_General = c("CD3D", "CD3E", "CD3G", "CD2", "CD7", "CD5"),
+  CD4_T_cell = c("CD4", "IL7R", "LDHB"),
+  CD8_T_cell = c("CD8A", "CD8B", "GZMA", "GZMB", "PRF1", "NKG7"),
+  Treg = c("FOXP3", "IL2RA", "CTLA4", "IKZF2", "TIGIT"),
+  
+  # B cells
+  B_cell = c("CD19", "MS4A1", "CD79A", "CD79B", "CD22", "CD24"),
+  Plasma_cell = c("SDC1", "MZB1", "JCHAIN", "IGHG1", "IGKC", "IGHM", "XBP1"),
+  
+  # Myeloid cells
+  Macrophage = c("CD68", "CD163", "MSR1", "MRC1", "CD14", "FCGR1A", 
+                 "CSF1R", "ITGAM", "CD86", "CD80"),
+  Monocyte = c("CD14", "FCGR3A", "S100A8", "S100A9", "S100A12", "LYZ"),
+  Dendritic_cell = c("ITGAX", "CD1C", "FCER1A", "CLEC9A", "CLEC10A", 
+                     "LAMP3", "CD1A", "CD1E"),
+  
+  # NK cells
+  NK_cell = c("NCAM1", "NKG7", "GNLY", "PRF1", "GZMA", "GZMB", 
+              "KLRB1", "KLRD1", "KLRC1", "KLRC2", "FCGR3A"),
+  
+  # NK T cells
+  NK_T_cell = c("KLRB1", "CD3E", "CD3D", "NKG7")
+)
+
+# Check availability in data
+immune_available <- list()
+for(cell_type in names(immune_markers)) {
+  genes <- immune_markers[[cell_type]]
+  available <- intersect(genes, rownames(cosmx))
+  immune_available[[cell_type]] <- available
+  
+  cat(sprintf("%-25s: %2d/%2d genes (%s)\n", 
+              cell_type, 
+              length(available), 
+              length(genes),
+              ifelse(length(available) > 0, 
+                     paste(head(available, 3), collapse=", "),
+                     "None")))
+}
+
+cat("\n")
+```
+
+## é–“è³ªãƒ»è¡€ç®¡ç³»ãƒžãƒ¼ã‚«ãƒ¼
+
+```{r stromal_vascular_markers}
+cat("=== Defining Stromal & Vascular Markers ===\n")
+
+# Stromal and vascular markers
+stromal_vascular_markers <- list(
+  # Endothelial cells
+  Endothelial = c("PECAM1", "VWF", "CDH5", "FLT1", "KDR", "TEK", 
+                  "CLDN5", "CD34", "ENG"),
+  
+  # Fibroblasts
+  Fibroblast = c("COL1A1", "COL1A2", "COL3A1", "DCN", "LUM", "PDGFRA",
+                 "VIM", "FN1", "ACTA2"),
+  
+  # Myofibroblasts
+  Myofibroblast = c("ACTA2", "TAGLN", "MYL9", "CNN1", "PDGFRB"),
+  
+  # Mesangial cells
+  Mesangial = c("PDGFRB", "ACTA2", "REN", "DES", "ITGA8"),
+  
+  # Pericytes
+  Pericyte = c("PDGFRB", "RGS5", "NOTCH3", "CSPG4", "MCAM"),
+  
+  # Smooth muscle cells
+  Smooth_Muscle = c("ACTA2", "MYH11", "TAGLN", "CNN1", "MYLK")
+)
+
+# Check availability in data
+stromal_available <- list()
+for(cell_type in names(stromal_vascular_markers)) {
+  genes <- stromal_vascular_markers[[cell_type]]
+  available <- intersect(genes, rownames(cosmx))
+  stromal_available[[cell_type]] <- available
+  
+  cat(sprintf("%-25s: %2d/%2d genes (%s)\n", 
+              cell_type, 
+              length(available), 
+              length(genes),
+              paste(available, collapse=", ")))
+}
+
+cat("\n")
+```
+
+---
+
+# 3. Module Scoreè¨ˆç®— {.tabset .tabset-fade}
+
+## ä¸Šçš®ç´°èƒžã‚¹ã‚³ã‚¢
+
+```{r epithelial_module_scores_realistic}
+cat("=== Calculating Epithelial Cell Module Scores (Realistic) ===\n")
+
+# Epithelial_General ã®ã¿è¨ˆç®—ï¼ˆã“ã‚Œã¯ä¿¡é ¼ã§ãã‚‹ï¼‰
+if("Epithelial_General" %in% names(epithelial_markers_revised)) {
+  genes <- epithelial_markers_revised$Epithelial_General
+  
+  if(length(genes) >= 2) {
+    cosmx <- AddModuleScore(
+      cosmx,
+      features = list(genes),
+      assay = "SCT",
+      name = "Epithelial_General_Score",
+      ctrl = 10,
+      nbin = 10
+    )
+    
+    # Rename to remove number suffix
+    score_col <- "Epithelial_General_Score1"
+    if(score_col %in% colnames(cosmx@meta.data)) {
+      colnames(cosmx@meta.data)[colnames(cosmx@meta.data) == score_col] <- 
+        "Epithelial_General_Score"
+    }
+    
+    cat(sprintf("âœ… Epithelial_General_Score: %d genes (%s)\n", 
+                length(genes),
+                paste(genes, collapse = ", ")))
+  } else {
+    cat("âŒ Insufficient genes for Epithelial_General\n")
+  }
+}
+
+cat("\nâ­ï¸  Skipping nephron segment subtypes (insufficient markers)\n")
+cat("   Proximal_Tubule: 0/7 markers\n")
+cat("   Thick_Ascending_Limb: 0/4 markers\n")
+cat("   Distal_Tubule: 1/4 markers (insufficient)\n")
+cat("   Collecting_Duct: 1/9 markers (insufficient)\n")
+cat("   Podocyte: 0/6 markers\n")
+cat("\nâž¡ï¸  Future: Will add cell STATE signatures from scFFPE analysis\n\n")
+```
+
+## å…ç–«ç´°èƒžã‚¹ã‚³ã‚¢
+
+```{r immune_module_scores}
+cat("=== Calculating Immune Cell Module Scores ===\n")
+
+# Calculate module scores for immune cell types
+for(cell_type in names(immune_available)) {
+  genes <- immune_available[[cell_type]]
+  
+  if(length(genes) >= 2) {
+    score_name <- paste0(cell_type, "_Score")
+    
+    cosmx <- AddModuleScore(
+      cosmx,
+      features = list(genes),
+      assay = "SCT",
+      name = score_name,
+      ctrl = 10,
+      nbin = 10
+    )
+    
+    # Rename to remove number suffix
+    score_col <- paste0(score_name, "1")
+    if(score_col %in% colnames(cosmx@meta.data)) {
+      colnames(cosmx@meta.data)[colnames(cosmx@meta.data) == score_col] <- score_name
+    }
+    
+    cat(sprintf("âœ… %-25s: %d genes\n", cell_type, length(genes)))
+  } else {
+    cat(sprintf("â­ï¸  %-25s: Skipped (insufficient genes: %d)\n", 
+                cell_type, length(genes)))
+  }
+}
+
+cat("\n")
+```
+
+## é–“è³ªãƒ»è¡€ç®¡ç³»ã‚¹ã‚³ã‚¢
+
+```{r stromal_module_scores}
+cat("=== Calculating Stromal & Vascular Module Scores ===\n")
+
+# Calculate module scores for stromal/vascular cell types
+for(cell_type in names(stromal_available)) {
+  genes <- stromal_available[[cell_type]]
+  
+  if(length(genes) >= 2) {
+    score_name <- paste0(cell_type, "_Score")
+    
+    cosmx <- AddModuleScore(
+      cosmx,
+      features = list(genes),
+      assay = "SCT",
+      name = score_name,
+      ctrl = 10,
+      nbin = 10
+    )
+    
+    # Rename to remove number suffix
+    score_col <- paste0(score_name, "1")
+    if(score_col %in% colnames(cosmx@meta.data)) {
+      colnames(cosmx@meta.data)[colnames(cosmx@meta.data) == score_col] <- score_name
+    }
+    
+    cat(sprintf("âœ… %-25s: %d genes\n", cell_type, length(genes)))
+  } else {
+    cat(sprintf("â­ï¸  %-25s: Skipped (insufficient genes: %d)\n", 
+                cell_type, length(genes)))
+  }
+}
+
+cat("\n")
+```
+
+## ã‚¹ã‚³ã‚¢ã‚µãƒžãƒªãƒ¼
+
+```{r score_summary}
+cat("=== Module Score Summary ===\n")
+
+# Get all score columns
+score_cols <- grep("_Score$", colnames(cosmx@meta.data), value = TRUE)
+
+cat("Total module scores calculated:", length(score_cols), "\n\n")
+
+# Summary statistics for each score
+score_summary <- data.frame()
+
+for(score in score_cols) {
+  cell_type <- gsub("_Score$", "", score)
+  values <- cosmx@meta.data[[score]]
+  
+  score_summary <- rbind(score_summary, data.frame(
+    Cell_Type = cell_type,
+    Mean = round(mean(values, na.rm = TRUE), 4),
+    Median = round(median(values, na.rm = TRUE), 4),
+    SD = round(sd(values, na.rm = TRUE), 4),
+    Min = round(min(values, na.rm = TRUE), 4),
+    Max = round(max(values, na.rm = TRUE), 4),
+    Q90 = round(quantile(values, 0.9, na.rm = TRUE), 4)
+  ))
+}
+
+print(score_summary)
+
+# Save summary
+write.csv(score_summary, 
+          file.path(output_dir, "module_score_summary.csv"),
+          row.names = FALSE)
+
+cat("\nâœ… Module score calculation complete\n\n")
+```
+
+---
+
+# 4. éšŽå±¤çš„ç´°èƒžã‚¿ã‚¤ãƒ—åˆ†é¡ž {.tabset .tabset-fade}
+
+## Level 1: Major Cell Types
+
+## Level 1: Major Cell Typesï¼ˆä¿®æ­£ç‰ˆï¼‰
+```{r major_cell_classification_realistic}
+cat("=== Level 1: Major Cell Type Classification (Realistic) ===\n")
+
+# Initialize
+cosmx$major_celltype <- "Unclassified"
+
+# 1. CD45+ Immune cells (åŽ³å¯†åˆ¤å®š)
+DefaultAssay(cosmx) <- "SCT"
+ptprc_expr <- GetAssayData(cosmx, assay = "SCT", layer = "data")["PTPRC", ]
+immune_cells <- ptprc_expr > 0
+
+cosmx$major_celltype[immune_cells] <- "Immune"
+cat(sprintf("âœ… Immune: %d cells (%.2f%%)\n", 
+            sum(immune_cells), 
+            sum(immune_cells)/ncol(cosmx)*100))
+
+# 2. Endothelial cells
+if("Endothelial_Score" %in% colnames(cosmx@meta.data)) {
+  endo_threshold <- quantile(cosmx$Endothelial_Score, 0.95)
+  endo_cells <- cosmx$Endothelial_Score > endo_threshold & 
+                cosmx$major_celltype == "Unclassified"
+  
+  cosmx$major_celltype[endo_cells] <- "Endothelial"
+  cat(sprintf("âœ… Endothelial: %d cells (%.2f%%)\n", 
+              sum(endo_cells), 
+              sum(endo_cells)/ncol(cosmx)*100))
+}
+
+# 3. Fibroblast/Stromal cells
+if("Fibroblast_Score" %in% colnames(cosmx@meta.data)) {
+  fibro_threshold <- quantile(cosmx$Fibroblast_Score, 0.90)
+  fibro_cells <- cosmx$Fibroblast_Score > fibro_threshold & 
+                 cosmx$major_celltype == "Unclassified"
+  
+  cosmx$major_celltype[fibro_cells] <- "Stromal"
+  cat(sprintf("âœ… Stromal: %d cells (%.2f%%)\n", 
+              sum(fibro_cells), 
+              sum(fibro_cells)/ncol(cosmx)*100))
+}
+
+# 4. Epithelial cells (broad category)
+if("Epithelial_General_Score" %in% colnames(cosmx@meta.data)) {
+  # ã‚ˆã‚Šç·©ã„é–¾å€¤ã§ä¸Šçš®ç´°èƒžã‚’åºƒãæ‹¾ã†
+  epi_threshold <- quantile(
+    cosmx$Epithelial_General_Score[cosmx$major_celltype == "Unclassified"], 
+    0.30  # 30%ileä»¥ä¸Šã‚’ä¸Šçš®ã¨ã™ã‚‹
+  )
+  epi_cells <- cosmx$Epithelial_General_Score > epi_threshold & 
+               cosmx$major_celltype == "Unclassified"
+  
+  cosmx$major_celltype[epi_cells] <- "Epithelial"
+  cat(sprintf("âœ… Epithelial (broad): %d cells (%.2f%%)\n", 
+              sum(epi_cells), 
+              sum(epi_cells)/ncol(cosmx)*100))
+}
+
+# 5. Remaining as "Other"
+other_cells <- cosmx$major_celltype == "Unclassified"
+cosmx$major_celltype[other_cells] <- "Other"
+cat(sprintf("âœ… Other: %d cells (%.2f%%)\n", 
+            sum(other_cells), 
+            sum(other_cells)/ncol(cosmx)*100))
+
+# Summary
+cat("\n=== Major Cell Type Distribution ===\n")
+major_summary <- table(cosmx$major_celltype)
+print(major_summary)
+print(round(prop.table(major_summary) * 100, 2))
+
+cat("\nðŸ“ Note: 'Epithelial' is a BROAD category\n")
+cat("   Nephron segment annotation is NOT attempted due to marker limitations\n\n")
+```
+
+## Level 2: Immune Subtypes
+
+```{r immune_subtype_classification}
+cat("=== Level 2: Immune Cell Subtype Classification ===\n")
+
+# Extract immune cells
+immune_cells_idx <- cosmx$major_celltype == "Immune"
+cosmx$immune_subtype <- NA
+
+if(sum(immune_cells_idx) > 0) {
+  
+  # Get all immune score columns
+  immune_score_cols <- grep("^(T_cell|B_cell|Plasma|Macrophage|Monocyte|Dendritic|NK)", 
+                             colnames(cosmx@meta.data), value = TRUE)
+  immune_score_cols <- grep("_Score$", immune_score_cols, value = TRUE)
+  
+  if(length(immune_score_cols) > 0) {
+    # For each immune cell, find the highest scoring cell type
+    immune_scores <- cosmx@meta.data[immune_cells_idx, immune_score_cols, drop = FALSE]
+    
+    # Find cell type with maximum score for each cell
+    max_scores <- apply(immune_scores, 1, function(x) {
+      if(all(is.na(x))) return(NA)
+      names(x)[which.max(x)]
+    })
+    
+    # Clean up names (remove _Score suffix)
+    max_scores <- gsub("_Score$", "", max_scores)
+    
+    # Assign subtypes
+    cosmx$immune_subtype[immune_cells_idx] <- max_scores
+    
+    # Summary
+    cat("âœ… Immune subtype classification complete\n")
+    immune_subtype_table <- table(cosmx$immune_subtype, useNA = "ifany")
+    print(immune_subtype_table)
+    
+  } else {
+    cat("âš ï¸ No immune score columns found\n")
+  }
+} else {
+  cat("âš ï¸ No immune cells detected\n")
+}
+
+cat("\n")
+```
+
+## Level 2: Epithelial Subtypes (Reference markers only)
+```{r epithelial_reference_markers}
+cat("=== Level 2: Epithelial - Reference Markers Only ===\n")
+
+# Extract epithelial cells
+epi_cells_idx <- cosmx$major_celltype == "Epithelial"
+cosmx$epithelial_subtype <- NA  # Initialize as NA (no formal subtyping)
+
+if(sum(epi_cells_idx) > 0) {
+  
+  cat(sprintf("Total epithelial cells: %d (%.2f%%)\n\n", 
+              sum(epi_cells_idx),
+              sum(epi_cells_idx) / ncol(cosmx) * 100))
+  
+  # Add reference marker expression (for visualization only)
+  DefaultAssay(cosmx) <- "SCT"
+  
+  # CALB1 expression (Distal tubule reference)
+  if("CALB1" %in% rownames(cosmx)) {
+    calb1_expr <- GetAssayData(cosmx, assay = "SCT", layer = "data")["CALB1", ]
+    cosmx$CALB1_expression <- calb1_expr
+    
+    calb1_pos_epi <- sum(calb1_expr[epi_cells_idx] > 0)
+    cat(sprintf("ðŸ“‹ CALB1+ epithelial cells: %d (%.1f%% of epithelial)\n", 
+                calb1_pos_epi, 
+                calb1_pos_epi / sum(epi_cells_idx) * 100))
+    cat("   â†’ Reference for potential distal tubule cells\n\n")
+  }
+  
+  # AQP3 expression (Collecting duct reference)
+  if("AQP3" %in% rownames(cosmx)) {
+    aqp3_expr <- GetAssayData(cosmx, assay = "SCT", layer = "data")["AQP3", ]
+    cosmx$AQP3_expression <- aqp3_expr
+    
+    aqp3_pos_epi <- sum(aqp3_expr[epi_cells_idx] > 0)
+    cat(sprintf("ðŸ“‹ AQP3+ epithelial cells: %d (%.1f%% of epithelial)\n", 
+                aqp3_pos_epi, 
+                aqp3_pos_epi / sum(epi_cells_idx) * 100))
+    cat("   â†’ Reference for potential collecting duct cells\n\n")
+  }
+  
+  cat("âš ï¸  IMPORTANT NOTES:\n")
+  cat("   - These are REFERENCE markers for visualization only\n")
+  cat("   - NOT used for formal cell type annotation\n")
+  cat("   - Single markers are insufficient for robust classification\n")
+  cat("   - All epithelial cells remain in broad 'Epithelial' category\n\n")
+  
+  cat("ðŸ“ FOR METHODS:\n")
+  cat('   "Reference markers (CALB1, AQP3) were visualized for\n')
+  cat('    exploratory purposes but not used for formal annotation\n')
+  cat('    due to insufficient marker gene coverage."\n\n')
+  
+} else {
+  cat("âš ï¸ No epithelial cells detected\n")
+}
+```
+
+## Unified Detailed Cell Type (Realistic)
+```{r unified_detailed_celltype_realistic}
+cat("=== Creating Unified Detailed Cell Type Column ===\n")
+
+# Start with major cell types
+cosmx$detailed_celltype <- cosmx$major_celltype
+
+# Fill in immune subtypes (ã“ã‚Œã¯OK - ãƒžãƒ¼ã‚«ãƒ¼å……å®Ÿ)
+immune_idx <- !is.na(cosmx$immune_subtype)
+if(sum(immune_idx) > 0) {
+  cosmx$detailed_celltype[immune_idx] <- cosmx$immune_subtype[immune_idx]
+  cat(sprintf("âœ… Immune subtypes assigned: %d cells\n", sum(immune_idx)))
+}
+
+# Epithelial stays as "Epithelial" (NO subtyping)
+epi_idx <- cosmx$major_celltype == "Epithelial"
+if(sum(epi_idx) > 0) {
+  cat(sprintf("ðŸ“‹ Epithelial cells kept as broad category: %d cells\n", sum(epi_idx)))
+}
+
+# Summary
+cat("\n=== Final Cell Type Distribution ===\n")
+detailed_summary <- table(cosmx$detailed_celltype)
+print(sort(detailed_summary, decreasing = TRUE))
+
+cat("\nðŸ“ CLASSIFICATION STRATEGY:\n")
+cat("   âœ… Immune cells: Detailed subtypes (9-11 types)\n")
+cat("      - Markers well-represented in CosMx panel\n")
+cat("   ðŸ“‹ Epithelial cells: Broad category only\n")
+cat("      - Classical nephron markers insufficient (0-1 genes per subtype)\n")
+cat("   âœ… Stromal/Endothelial: Well-classified\n")
+cat("      - Markers well-represented in CosMx panel\n\n")
+
+# Save summary
+write.csv(
+  data.frame(
+    Cell_Type = names(detailed_summary),
+    Count = as.numeric(detailed_summary),
+    Percentage = round(as.numeric(detailed_summary) / ncol(cosmx) * 100, 2)
+  ),
+  file.path(output_dir, "realistic_celltype_distribution.csv"),
+  row.names = FALSE
+)
+
+cat("âœ… Cell type annotation complete (realistic approach)\n")
+cat("Total unique cell types:", length(unique(cosmx$detailed_celltype)), "\n\n")
+```
+---
+
+# 5. å“è³ªè©•ä¾¡ã¨æ¤œè¨¼ {.tabset .tabset-fade}
+
+## ãƒžãƒ¼ã‚«ãƒ¼éºä¼å­ç™ºç¾ç¢ºèª
+
+```{r marker_expression_validation}
+cat("=== Validating Marker Gene Expression ===\n")
+
+# Key markers to validate
+key_markers <- list(
+  PTPRC = "Immune",
+  CD3D = "T_cell",
+  CD19 = "B_cell",
+  CD68 = "Macrophage",
+  LRP2 = "Proximal_Tubule",
+  SLC12A3 = "Distal_Tubule",
+  AQP2 = "Collecting_Duct",
+  NPHS2 = "Podocyte",
+  PECAM1 = "Endothelial",
+  COL1A1 = "Stromal"
+)
+
+# Check expression in predicted cell types
+DefaultAssay(cosmx) <- "SCT"
+validation_results <- data.frame()
+
+for(marker in names(key_markers)) {
+  expected_celltype <- key_markers[[marker]]
+  
+  if(marker %in% rownames(cosmx)) {
+    expr <- GetAssayData(cosmx, assay = "SCT", layer = "data")[marker, ]
+    
+    # Expression in expected cell type
+    if(grepl("_", expected_celltype)) {
+      # Detailed cell type
+      expected_cells <- cosmx$detailed_celltype == expected_celltype
+    } else {
+      # Major cell type or contains pattern
+      expected_cells <- cosmx$major_celltype == expected_celltype | 
+                       grepl(expected_celltype, cosmx$detailed_celltype)
+    }
+    
+    if(sum(expected_cells) > 0) {
+      expr_in_expected <- expr[expected_cells]
+      expr_in_others <- expr[!expected_cells]
+      
+      validation_results <- rbind(validation_results, data.frame(
+        Marker = marker,
+        Expected_CellType = expected_celltype,
+        N_Expected = sum(expected_cells),
+        Mean_Expr_Expected = round(mean(expr_in_expected), 3),
+        Pct_Pos_Expected = round(sum(expr_in_expected > 0) / length(expr_in_expected) * 100, 1),
+        Mean_Expr_Others = round(mean(expr_in_others), 3),
+        Pct_Pos_Others = round(sum(expr_in_others > 0) / length(expr_in_others) * 100, 1),
+        Fold_Change = round(mean(expr_in_expected) / (mean(expr_in_others) + 0.001), 2)
+      ))
+    }
+  }
+}
+
+print(validation_results)
+
+# Save validation results
+write.csv(validation_results,
+          file.path(output_dir, "marker_validation_results.csv"),
+          row.names = FALSE)
+
+cat("\nâœ… Marker validation complete\n\n")
+```
+
+## ã‚µãƒ³ãƒ—ãƒ«åˆ¥åˆ†å¸ƒ
+
+```{r sample_distribution}
+cat("=== Sample-wise Cell Type Distribution ===\n")
+
+# Major cell types by sample
+major_by_sample <- table(cosmx$sample, cosmx$major_celltype)
+cat("=== Major Cell Types by Sample ===\n")
+print(major_by_sample)
+
+# Percentage
+major_by_sample_pct <- prop.table(major_by_sample, margin = 1) * 100
+print(round(major_by_sample_pct, 2))
+
+# Save
+write.csv(major_by_sample,
+          file.path(output_dir, "major_celltype_by_sample.csv"))
+
+# Detailed cell types by sample (å®Ÿéš›ã®æ•°ã«å¯¾å¿œ)
+detailed_by_sample <- table(cosmx$sample, cosmx$detailed_celltype)
+
+# å®Ÿéš›ã®ç´°èƒžã‚¿ã‚¤ãƒ—æ•°ã‚’ç¢ºèª
+n_celltypes <- ncol(detailed_by_sample)
+top_n <- min(20, n_celltypes)  # 20ã¨å®Ÿéš›ã®æ•°ã®å°ã•ã„æ–¹
+
+top_celltypes <- names(sort(table(cosmx$detailed_celltype), decreasing = TRUE)[1:top_n])
+detailed_by_sample_top <- detailed_by_sample[, top_celltypes]
+
+cat("\n=== Top", top_n, "Detailed Cell Types by Sample ===\n")
+print(detailed_by_sample_top)
+
+# Save
+write.csv(detailed_by_sample_top,
+          file.path(output_dir, paste0("top", top_n, "_detailed_celltype_by_sample.csv")))
+
+cat("\n")
+```
+
+## ç©ºé–“åˆ†å¸ƒç¢ºèª
+
+```{r spatial_distribution_check}
+cat("=== Checking Spatial Distribution ===\n")
+
+# Check for different coordinate systems
+has_fov_coords <- all(c("x_FOV_px", "y_FOV_px", "fov") %in% colnames(cosmx@meta.data))
+has_slide_coords <- all(c("x_slide_mm", "y_slide_mm") %in% colnames(cosmx@meta.data))
+
+if(has_slide_coords) {
+  
+  cat("âœ… Slide coordinates available (x_slide_mm, y_slide_mm)\n")
+  
+  # Plot spatial distribution for each sample using slide coordinates
+  for(sample_id in unique(cosmx$sample)) {
+    sample_cells <- cosmx$sample == sample_id
+    sample_data <- cosmx@meta.data[sample_cells, ]
+    
+    p <- ggplot(sample_data, aes(x = x_slide_mm, y = y_slide_mm, 
+                                  color = major_celltype)) +
+      geom_point(size = 0.1, alpha = 0.6) +
+      scale_color_brewer(palette = "Set2") +
+      theme_minimal() +
+      theme(legend.position = "right",
+            aspect.ratio = 1) +
+      labs(title = paste("Sample", sample_id, "- Major Cell Types"),
+           x = "X coordinate (mm)",
+           y = "Y coordinate (mm)",
+           color = "Cell Type")
+    
+    print(p)
+    
+    ggsave(
+      file.path(output_dir, paste0("spatial_major_celltype_", sample_id, ".png")),
+      p, width = 10, height = 8, dpi = 300
+    )
+  }
+  
+  cat("âœ… Spatial distribution plots saved\n")
+  
+} else if(has_fov_coords) {
+  
+  cat("âœ… FOV coordinates available (x_FOV_px, y_FOV_px)\n")
+  cat("   Note: Plotting by FOV - multiple panels per sample\n")
+  
+  # Plot by FOV
+  for(sample_id in unique(cosmx$sample)) {
+    sample_cells <- cosmx$sample == sample_id
+    sample_data <- cosmx@meta.data[sample_cells, ]
+    
+    p <- ggplot(sample_data, aes(x = x_FOV_px, y = y_FOV_px, 
+                                  color = major_celltype)) +
+      geom_point(size = 0.1, alpha = 0.6) +
+      facet_wrap(~fov, ncol = 5) +
+      scale_color_brewer(palette = "Set2") +
+      theme_minimal() +
+      theme(legend.position = "bottom",
+            strip.text = element_text(size = 6)) +
+      labs(title = paste("Sample", sample_id, "- Major Cell Types (by FOV)"),
+           x = "X coordinate (pixels)",
+           y = "Y coordinate (pixels)",
+           color = "Cell Type")
+    
+    print(p)
+    
+    ggsave(
+      file.path(output_dir, paste0("spatial_fov_major_celltype_", sample_id, ".png")),
+      p, width = 16, height = 12, dpi = 300
+    )
+  }
+  
+  cat("âœ… Spatial distribution plots (FOV) saved\n")
+  
+} else {
+  cat("âš ï¸ Spatial coordinates not found\n")
+  cat("   Expected: x_global_px/y_global_px or x_slide_mm/y_slide_mm or x_FOV_px/y_FOV_px\n")
+}
+
+cat("\n")
+```
+
+---
+
+# 6. å¯è¦–åŒ– {.tabset .tabset-fade}
+
+## UMAP: Major Cell Types
+
+```{r umap_major_celltypes}
+cat("=== UMAP Visualization: Major Cell Types ===\n")
+
+# Check if UMAP exists
+if("umap.harmony.sct" %in% names(cosmx@reductions)) {
+  
+  p_umap_major <- DimPlot(
+    cosmx,
+    reduction = "umap.harmony.sct",
+    group.by = "major_celltype",
+    label = TRUE,
+    label.size = 4,
+    pt.size = 0.3,
+    raster = FALSE
+  ) +
+    scale_color_brewer(palette = "Set2") +
+    theme_minimal(base_size = 14) +
+    labs(title = "Major Cell Types (UMAP)",
+         x = "UMAP 1",
+         y = "UMAP 2") +
+    theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+  
+  print(p_umap_major)
+  
+  ggsave(
+    file.path(output_dir, "umap_major_celltypes.png"),
+    p_umap_major, width = 10, height = 8, dpi = 300
+  )
+  
+  cat("âœ… UMAP major cell types saved\n")
+  
+} else {
+  cat("âš ï¸ UMAP reduction not found\n")
+}
+
+cat("\n")
+```
+
+## UMAP: Detailed Cell Types
+
+```{r umap_detailed_celltypes}
+cat("=== UMAP Visualization: Detailed Cell Types ===\n")
+
+if("umap.harmony.sct" %in% names(cosmx@reductions)) {
+  
+  # Plot top 15 cell types only for clarity
+  top15_types <- names(sort(table(cosmx$detailed_celltype), decreasing = TRUE)[1:15])
+  cosmx$detailed_celltype_top15 <- ifelse(
+    cosmx$detailed_celltype %in% top15_types,
+    as.character(cosmx$detailed_celltype),
+    "Other"
+  )
+  
+  p_umap_detailed <- DimPlot(
+    cosmx,
+    reduction = "umap.harmony.sct",
+    group.by = "detailed_celltype_top15",
+    label = TRUE,
+    label.size = 3,
+    pt.size = 0.3,
+    raster = FALSE
+  ) +
+    theme_minimal(base_size = 12) +
+    labs(title = "Detailed Cell Types - Top 15 (UMAP)",
+         x = "UMAP 1",
+         y = "UMAP 2") +
+    theme(plot.title = element_text(hjust = 0.5, face = "bold"),
+          legend.position = "right")
+  
+  print(p_umap_detailed)
+  
+  ggsave(
+    file.path(output_dir, "umap_detailed_celltypes_top15.png"),
+    p_umap_detailed, width = 12, height = 8, dpi = 300
+  )
+  
+  cat("âœ… UMAP detailed cell types saved\n")
+  
+}
+
+cat("\n")
+```
+
+## Module Score Heatmap
+
+```{r module_score_heatmap}
+cat("=== Module Score Heatmap ===\n")
+
+# Get score columns
+score_cols <- grep("_Score$", colnames(cosmx@meta.data), value = TRUE)
+
+if(length(score_cols) > 0) {
+  
+  # Sample cells for heatmap (max 5000 per major cell type)
+  set.seed(123)
+  sampled_cells <- c()
+  for(ct in unique(cosmx$major_celltype)) {
+    ct_cells <- which(cosmx$major_celltype == ct)
+    n_sample <- min(5000, length(ct_cells))
+    sampled_cells <- c(sampled_cells, sample(ct_cells, n_sample))
+  }
+  
+  # Extract scores
+  score_matrix <- t(as.matrix(cosmx@meta.data[sampled_cells, score_cols]))
+  
+  # Create unique column names using cell indices
+  colnames(score_matrix) <- paste0("Cell_", sampled_cells)
+  
+  # Clean row names (remove _Score suffix)
+  rownames(score_matrix) <- gsub("_Score$", "", rownames(score_matrix))
+  
+  # Create annotation data frame with unique row names
+  annotation_df <- data.frame(
+    Major_CellType = cosmx$major_celltype[sampled_cells],
+    row.names = paste0("Cell_", sampled_cells)
+  )
+  
+  # Define colors for cell types
+  cell_type_colors <- c(
+    "Epithelial" = "#66C2A5",
+    "Other" = "#FC8D62",
+    "Stromal" = "#8DA0CB",
+    "Endothelial" = "#E78AC3",
+    "Immune" = "#A6D854"
+  )
+  
+  # Plot heatmap
+  pdf(file.path(output_dir, "module_score_heatmap.pdf"), width = 12, height = 10)
+  pheatmap(
+    score_matrix,
+    show_colnames = FALSE,
+    cluster_rows = TRUE,
+    cluster_cols = TRUE,
+    color = colorRampPalette(c("blue", "white", "red"))(100),
+    main = "Module Scores by Cell Type",
+    fontsize_row = 8,
+    annotation_col = annotation_df,
+    annotation_colors = list(Major_CellType = cell_type_colors)
+  )
+  dev.off()
+  
+  cat("âœ… Module score heatmap saved\n")
+}
+
+cat("\n")
+```
+
+## ä¸»è¦ãƒžãƒ¼ã‚«ãƒ¼ç™ºç¾
+
+```{r key_marker_expression}
+cat("=== Key Marker Expression ===\n")
+
+# Key markers to visualize
+markers_to_plot <- c("PTPRC", "CD3D", "CD68", "LRP2", "SLC12A3", 
+                     "AQP2", "NPHS2", "PECAM1", "COL1A1")
+markers_available <- intersect(markers_to_plot, rownames(cosmx))
+
+if(length(markers_available) > 0 && "umap.harmony.sct" %in% names(cosmx@reductions)) {
+  
+  # Create feature plots
+  p_markers <- FeaturePlot(
+    cosmx,
+    features = markers_available,
+    reduction = "umap.harmony.sct",
+    ncol = 3,
+    pt.size = 0.3,
+    order = TRUE
+  )
+  
+  print(p_markers)
+  
+  ggsave(
+    file.path(output_dir, "key_marker_expression_umap.png"),
+    p_markers, width = 15, height = ceiling(length(markers_available)/3) * 5, dpi = 300
+  )
+  
+  cat("âœ… Key marker expression plots saved\n")
+}
+
+cat("\n")
+```
+
+---
+
+# 7. ãƒ‡ãƒ¼ã‚¿ä¿å­˜ {.tabset .tabset-fade}
+
+## ãƒ¡ã‚¿ãƒ‡ãƒ¼ã‚¿ä¿å­˜
+
+```{r save_metadata}
+cat("=== Saving Metadata ===\n")
+
+# Check if condition column exists, if not create it
+if(!"condition" %in% colnames(cosmx@meta.data)) {
+  cat("âš ï¸  'condition' column not found - creating from sample info\n")
+  cosmx@meta.data$condition <- case_when(
+    cosmx@meta.data$sample == "S0" ~ "Rejection",
+    cosmx@meta.data$sample == "S1" ~ "ICI-AKI",
+    cosmx@meta.data$sample == "S2" ~ "Drug-induced_AKI",
+    cosmx@meta.data$sample == "S3" ~ "ICI-AKI",
+    TRUE ~ "Unknown"
+  )
+  cat("âœ… 'condition' column created\n")
+}
+
+# Check if spatial coordinates exist
+spatial_cols <- c()
+if(all(c("x_slide_mm", "y_slide_mm") %in% colnames(cosmx@meta.data))) {
+  spatial_cols <- c("x_slide_mm", "y_slide_mm")
+  cat("âœ… Using slide coordinates (mm)\n")
+} else if(all(c("x_FOV_px", "y_FOV_px") %in% colnames(cosmx@meta.data))) {
+  spatial_cols <- c("x_FOV_px", "y_FOV_px")
+  cat("âœ… Using FOV coordinates (pixels)\n")
+} else {
+  cat("âš ï¸  No spatial coordinates found\n")
+}
+
+# Extract key metadata columns
+metadata_export <- cosmx@meta.data %>%
+  select(
+    # Sample info
+    sample, condition,
+    # Cell type annotations
+    major_celltype, immune_subtype, epithelial_subtype, detailed_celltype,
+    # Spatial coordinates (if available)
+    any_of(spatial_cols),
+    # QC metrics
+    nCount_SCT, nFeature_SCT,
+    # All module scores
+    ends_with("_Score")
+  )
+
+# Save as CSV
+write.csv(
+  metadata_export,
+  file.path(output_dir, "cosmx_comprehensive_annotation_metadata.csv"),
+  row.names = TRUE
+)
+
+cat("âœ… Metadata saved\n")
+cat("Rows:", nrow(metadata_export), "\n")
+cat("Columns:", ncol(metadata_export), "\n\n")
+```
+
+## Seuratã‚ªãƒ–ã‚¸ã‚§ã‚¯ãƒˆä¿å­˜
+
+```{r save_seurat_object}
+cat("=== Saving Annotated Seurat Object ===\n")
+
+# Save complete annotated object
+output_rds <- file.path(data_dir, "20251117_CosMx_SCT_nolabeltransfer_comprehensive_annotation.rds")
+
+cat("Saving to:", output_rds, "\n")
+cat("Object size:", format(object.size(cosmx), units = "GB"), "\n")
+
+saveRDS(cosmx, output_rds)
+
+cat("âœ… Seurat object saved\n")
+cat("File size:", round(file.info(output_rds)$size / 1024^3, 2), "GB\n\n")
+```
+
+## ã‚µãƒžãƒªãƒ¼ãƒ¬ãƒãƒ¼ãƒˆ
+
+```{r summary_report}
+cat("=== Generating Summary Report ===\n")
+
+# Create summary report
+summary_report <- list(
+  analysis_date = Sys.Date(),
+  total_cells = ncol(cosmx),
+  total_genes = nrow(cosmx),
+  samples = unique(cosmx$sample),
+  
+  major_celltypes = list(
+    count = length(unique(cosmx$major_celltype)),
+    distribution = as.list(table(cosmx$major_celltype))
+  ),
+  
+  detailed_celltypes = list(
+    count = length(unique(cosmx$detailed_celltype)),
+    top10 = names(sort(table(cosmx$detailed_celltype), decreasing = TRUE)[1:10])
+  ),
+  
+  module_scores_calculated = length(grep("_Score$", colnames(cosmx@meta.data))),
+  
+  marker_genes_used = list(
+    epithelial = length(unlist(epithelial_available)),
+    immune = length(unlist(immune_available)),
+    stromal = length(unlist(stromal_available))
+  )
+)
+
+# Save as RDS
+saveRDS(summary_report, file.path(output_dir, "analysis_summary_report.rds"))
+
+# Print summary
+cat("\n")
+cat(strrep("=", 70), "\n")
+cat("COMPREHENSIVE ANNOTATION SUMMARY\n")
+cat(strrep("=", 70), "\n")
+cat("Analysis Date:", as.character(summary_report$analysis_date), "\n")
+cat("Total Cells:", summary_report$total_cells, "\n")
+cat("Total Genes:", summary_report$total_genes, "\n")
+cat("Samples:", paste(summary_report$samples, collapse = ", "), "\n")
+cat("\nMajor Cell Types:", summary_report$major_celltypes$count, "\n")
+for(ct in names(summary_report$major_celltypes$distribution)) {
+  cat(sprintf("  %-15s: %6d (%.2f%%)\n", 
+              ct, 
+              summary_report$major_celltypes$distribution[[ct]],
+              summary_report$major_celltypes$distribution[[ct]] / summary_report$total_cells * 100))
+}
+cat("\nDetailed Cell Types:", summary_report$detailed_celltypes$count, "\n")
+cat("Top 10:\n")
+for(i in 1:min(10, length(summary_report$detailed_celltypes$top10))) {
+  ct <- summary_report$detailed_celltypes$top10[i]
+  count <- sum(cosmx$detailed_celltype == ct)
+  cat(sprintf("  %2d. %-25s: %6d (%.2f%%)\n", 
+              i, ct, count, count / summary_report$total_cells * 100))
+}
+cat("\nModule Scores Calculated:", summary_report$module_scores_calculated, "\n")
+cat(strrep("=", 70), "\n")
+
+cat("\nâœ… Analysis complete!\n")
+cat("Output directory:", output_dir, "\n\n")
+```
+
+---
+
+# 8. ã‚»ãƒƒã‚·ãƒ§ãƒ³æƒ…å ±
+
+```{r session_info}
+cat("=== Session Information ===\n")
+sessionInfo()
+```
+
+---
+
+# ã¾ã¨ã‚
+
+## ä¸»è¦ãªæˆæžœ
+
+1. **CosMx 1,000éºä¼å­ãƒ‘ãƒãƒ«ã®å®Œå…¨æ´»ç”¨**
+   - ä¸Šçš®ç´°èƒžãƒžãƒ¼ã‚«ãƒ¼: 7ã‚«ãƒ†ã‚´ãƒª
+   - å…ç–«ç´°èƒžãƒžãƒ¼ã‚«ãƒ¼: 11ã‚«ãƒ†ã‚´ãƒª
+   - é–“è³ªãƒ»è¡€ç®¡ç³»ãƒžãƒ¼ã‚«ãƒ¼: 6ã‚«ãƒ†ã‚´ãƒª
+
+2. **éšŽå±¤çš„ç´°èƒžã‚¿ã‚¤ãƒ—åˆ†é¡ž**
+   - Level 1: Major cell types (5-8ã‚¿ã‚¤ãƒ—)
+   - Level 2: Detailed cell types (20-30ã‚¿ã‚¤ãƒ—)
+
+3. **å“è³ªæ¤œè¨¼**
+   - ãƒžãƒ¼ã‚«ãƒ¼éºä¼å­ç™ºç¾ã®ä¸€è²«æ€§ç¢ºèª
+   - ã‚µãƒ³ãƒ—ãƒ«é–“åˆ†å¸ƒã®å¦¥å½“æ€§ç¢ºèª
+   - ç©ºé–“åˆ†å¸ƒãƒ‘ã‚¿ãƒ¼ãƒ³ã®æ¤œè¨¼
+
+4. **åŒ…æ‹¬çš„ãƒ‡ãƒ¼ã‚¿ã‚»ãƒƒãƒˆä½œæˆ**
+   - å…¨ç´°èƒžã«å¯¾ã™ã‚‹è©³ç´°ã‚¢ãƒŽãƒ†ãƒ¼ã‚·ãƒ§ãƒ³
+   - Module scoreå®Œå‚™
+   - ç©ºé–“åº§æ¨™æƒ…å ±ä¿æŒ
+
+## æ¬¡ã®ã‚¹ãƒ†ãƒƒãƒ—
+
+1. **Immuneç´°èƒžã®è©³ç´°è§£æž**
+   - CD45+ç´°èƒžã®å†ã‚¯ãƒ©ã‚¹ã‚¿ãƒªãƒ³ã‚°
+   - Tç´°èƒžã‚µãƒ–ã‚»ãƒƒãƒˆåˆ†é¡ž
+   - ICI-AKIç‰¹ç•°çš„ãƒžãƒ¼ã‚«ãƒ¼æŽ¢ç´¢
+
+2. **ä¸Šçš®ç´°èƒžã®æ¤œè¨¼**
+   - å„ã‚µãƒ–ã‚¿ã‚¤ãƒ—ã®ç©ºé–“åˆ†å¸ƒç¢ºèª
+   - å°¿ç´°ç®¡ã‚»ã‚°ãƒ¡ãƒ³ãƒˆåŒå®š
+   - ç—…æ…‹é–¢é€£éºä¼å­ç™ºç¾è§£æž
+
+3. **çµ±åˆè§£æž**
+   - scFFPEãƒ‡ãƒ¼ã‚¿ã¨ã®æ¯”è¼ƒæ¤œè¨¼
+   - ãƒã‚¤ã‚ªãƒžãƒ¼ã‚«ãƒ¼åŒå®š
+   - ç—…æ…‹ãƒ¡ã‚«ãƒ‹ã‚ºãƒ è§£æ˜Ž
+
+---
+
+**Analysis completed**: `r Sys.time()`
+

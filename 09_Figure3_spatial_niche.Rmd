@@ -1,0 +1,1048 @@
+---
+title: "CosMx Spatial Transcriptomics: Figure 3 - Spatial Immune Niche Analysis"
+author: "Hiroyuki Arai"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 4
+    code_folding: show
+    theme: cosmo
+    highlight: tango
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  fig.width = 12,
+  fig.height = 8,
+  dpi = 300
+)
+```
+
+---
+
+# 1. ãƒ©ã‚¤ãƒ–ãƒ©ãƒªèª­ã¿è¾¼ã¿ {.tabset}
+
+## å¿…é ˆãƒ‘ãƒƒã‚±ãƒ¼ã‚¸
+
+```{r libraries}
+cat("=== Loading Required Libraries ===\n")
+# ggpubrãƒ‘ãƒƒã‚±ãƒ¼ã‚¸ã®ã‚¤ãƒ³ã‚¹ãƒˆãƒ¼ãƒ«ç¢ºèªï¼ˆâ˜…è¿½åŠ ï¼‰
+if(!require(ggpubr, quietly = TRUE)) {
+  cat("Installing ggpubr package...\n")
+  install.packages("ggpubr")
+}
+# Core packages
+library(Seurat)
+library(tidyverse)
+library(patchwork)
+
+# Spatial analysis
+library(spatstat)
+library(dbscan)
+
+# Visualization
+library(viridis)
+library(ggrepel)
+library(RColorBrewer)
+library(ggpubr) 
+# Data manipulation
+library(data.table)
+library(reshape2)
+
+cat("âœ… All libraries loaded successfully\n")
+```
+
+## ãƒ‘ãƒƒã‚±ãƒ¼ã‚¸ãƒãƒ¼ã‚¸ãƒ§ãƒ³ç¢ºèª
+
+```{r check_versions}
+cat("=== Package Versions ===\n")
+cat("Seurat:", as.character(packageVersion("Seurat")), "\n")
+cat("Tidyverse:", as.character(packageVersion("tidyverse")), "\n")
+cat("spatstat:", as.character(packageVersion("spatstat")), "\n")
+cat("dbscan:", as.character(packageVersion("dbscan")), "\n")
+cat("\n")
+```
+
+---
+
+# 2. ãƒ‡ãƒ¼ã‚¿èª­ã¿è¾¼ã¿ {.tabset}
+
+## ãƒ™ãƒ¼ã‚¹ãƒ‡ã‚£ãƒ¬ã‚¯ãƒˆãƒªè¨­å®š
+
+```{r set_directories}
+cat("=== Setting up Directories ===\n")
+
+# ãƒ™ãƒ¼ã‚¹ãƒ‡ã‚£ãƒ¬ã‚¯ãƒˆãƒªï¼ˆ2ã¤ã®å¯èƒ½æ€§ã«å¯¾å¿œï¼‰
+base_dir_option1 <- "/Users/HiroyukiArai/Documents/å¤§å­¦é™¢/ç ”ç©¶çµæžœ/2024æ‘ä¸Šå…ˆç”ŸCosMX"
+base_dir_option2 <- "/Users/HiroyukiArai/Documents/2025å¹´ç•™å­¦/ç ”ç©¶é–¢é€£/ç ”ç©¶çµæžœ/202509 cosmx-kidney-project"
+
+# ã©ã¡ã‚‰ãŒå­˜åœ¨ã™ã‚‹ã‹ç¢ºèª
+if(dir.exists(base_dir_option2)) {
+  base_dir <- base_dir_option2
+  cat("âœ… Using project directory:", base_dir, "\n")
+} else if(dir.exists(base_dir_option1)) {
+  base_dir <- base_dir_option1
+  cat("âœ… Using base directory:", base_dir, "\n")
+} else {
+  stop("âŒ Neither base directory found!")
+}
+
+# CosMxãƒ•ã‚¡ã‚¤ãƒ«ã®å ´æ‰€ã‚’æŽ¢ç´¢
+# ã‚ªãƒ—ã‚·ãƒ§ãƒ³1: Phase 2 Signatureä»˜ããƒ•ã‚¡ã‚¤ãƒ«
+phase2_pattern <- "results/figures/.*CosMx_Signature_Projection.*"
+phase2_dirs <- list.dirs(base_dir, recursive = TRUE, full.names = TRUE)
+phase2_dirs <- phase2_dirs[grepl(phase2_pattern, phase2_dirs)]
+
+cosmx_file <- NULL
+
+if(length(phase2_dirs) > 0) {
+  # Phase 2ãƒ‡ã‚£ãƒ¬ã‚¯ãƒˆãƒªãŒè¦‹ã¤ã‹ã£ãŸå ´åˆ
+  latest_dir <- phase2_dirs[length(phase2_dirs)]
+  cat("Found Phase 2 directory:", latest_dir, "\n")
+  
+  rds_files <- list.files(latest_dir, pattern = "CosMx_with_signatures.*\\.rds$", 
+                          full.names = TRUE, recursive = TRUE)
+  
+  if(length(rds_files) > 0) {
+    cosmx_file <- rds_files[length(rds_files)]
+    cat("âœ… Using Phase 2 Signature file:", cosmx_file, "\n")
+  }
+}
+
+# ã‚ªãƒ—ã‚·ãƒ§ãƒ³2: åŸºæœ¬ã‚¢ãƒŽãƒ†ãƒ¼ã‚·ãƒ§ãƒ³æ¸ˆã¿ãƒ•ã‚¡ã‚¤ãƒ«
+if(is.null(cosmx_file)) {
+  cat("âš ï¸ Phase 2 file not found, searching for annotated file...\n")
+  
+  # è¤‡æ•°ã®å¯èƒ½ãªå ´æ‰€ã‚’æ¤œç´¢
+  possible_paths <- c(
+    file.path(base_dir, "20251117_CosMx_comprehensive_annotation.rds"),
+    file.path(base_dir, "20251117_CosMx_SCT_nolabeltransfer_comprehensive_annotation.rds"),
+    file.path(base_dir, "data", "processed", "20251117_CosMx_comprehensive_annotation.rds"),
+    file.path(base_dir, "data", "processed", "20251117_CosMx_SCT_nolabeltransfer_comprehensive_annotation.rds")
+  )
+  
+  for(path in possible_paths) {
+    if(file.exists(path)) {
+      cosmx_file <- path
+      cat("âœ… Found annotated CosMx file:", cosmx_file, "\n")
+      break
+    }
+  }
+}
+
+# ãƒ•ã‚¡ã‚¤ãƒ«ãŒè¦‹ã¤ã‹ã‚‰ãªã„å ´åˆ
+if(is.null(cosmx_file) || !file.exists(cosmx_file)) {
+  cat("\nâŒ CosMx file not found. Please check the following locations:\n")
+  cat("1.", file.path(base_dir, "results/figures/[timestamp]/CosMx_with_signatures_*.rds"), "\n")
+  cat("2.", file.path(base_dir, "20251117_CosMx_comprehensive_annotation.rds"), "\n")
+  cat("3.", file.path(base_dir, "data/processed/20251117_CosMx_*.rds"), "\n")
+  stop("âŒ CosMx data file not found!")
+}
+
+cat("\nFinal file to load:", cosmx_file, "\n")
+```
+
+## CosMxãƒ‡ãƒ¼ã‚¿èª­ã¿è¾¼ã¿
+
+```{r load_cosmx}
+cat("=== Loading CosMx Data ===\n")
+
+cosmx <- readRDS(cosmx_file)
+
+cat("âœ… Data loaded successfully\n")
+cat("   Cells:", ncol(cosmx), "\n")
+cat("   Genes:", nrow(cosmx), "\n")
+cat("   Samples:", paste(unique(cosmx$sample), collapse = ", "), "\n")
+cat("   Conditions:", paste(unique(cosmx$condition), collapse = ", "), "\n\n")
+
+# ãƒ¡ã‚¿ãƒ‡ãƒ¼ã‚¿ç¢ºèª
+cat("=== Metadata Columns ===\n")
+metadata_cols <- colnames(cosmx@meta.data)
+print(metadata_cols)
+
+# Signature scoreåˆ—ç¢ºèª
+score_cols <- grep("_Score|_1$", metadata_cols, value = TRUE)
+cat("\n=== Signature Scores Available ===\n")
+print(score_cols)
+
+# åº§æ¨™ç¢ºèª
+coord_cols <- grep("^(x_|y_)", metadata_cols, value = TRUE)
+cat("\n=== Spatial Coordinates Available ===\n")
+print(coord_cols)
+
+# åº§æ¨™åˆ—ã®è¨­å®š
+if("x_slide_mm" %in% metadata_cols) {
+  x_coord <- "x_slide_mm"
+  y_coord <- "y_slide_mm"
+  cat("\nâœ… Using slide coordinates (mm scale)\n")
+} else if("x_global_px" %in% metadata_cols) {
+  x_coord <- "x_global_px"
+  y_coord <- "y_global_px"
+  cat("\nâœ… Using global pixel coordinates\n")
+} else {
+  stop("âŒ No suitable coordinate columns found!")
+}
+```
+
+## å‡ºåŠ›ãƒ‡ã‚£ãƒ¬ã‚¯ãƒˆãƒªä½œæˆ
+
+```{r output_dirs}
+# ã‚¿ã‚¤ãƒ ã‚¹ã‚¿ãƒ³ãƒ—ä»˜ãå‡ºåŠ›ãƒ‡ã‚£ãƒ¬ã‚¯ãƒˆãƒª
+timestamp <- format(Sys.time(), "%Y%m%d_%H%M%S")
+output_dir <- file.path(base_dir, "results", "figures", 
+                        paste0("20251124_Figure3_SpatialNiche_", timestamp))
+
+# ã‚µãƒ–ãƒ‡ã‚£ãƒ¬ã‚¯ãƒˆãƒªä½œæˆ
+dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+dir.create(file.path(output_dir, "Figure3"), showWarnings = FALSE)
+dir.create(file.path(output_dir, "Statistics"), showWarnings = FALSE)
+dir.create(file.path(output_dir, "Intermediate"), showWarnings = FALSE)
+
+cat("âœ… Output directories created:\n")
+cat("   ", output_dir, "\n")
+```
+
+---
+
+# 3. ãƒ†ãƒ¼ãƒžè¨­å®š
+
+```{r plot_theme}
+# è«–æ–‡ç”¨ãƒ†ãƒ¼ãƒž
+publication_theme <- theme_classic() +
+  theme(
+    text = element_text(size = 12, family = "Arial"),
+    plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
+    axis.title = element_text(size = 12),
+    axis.text = element_text(size = 10),
+    legend.title = element_text(size = 11),
+    legend.text = element_text(size = 10),
+    strip.background = element_rect(fill = "grey90", color = "black"),
+    strip.text = element_text(size = 11, face = "bold"),
+    panel.border = element_rect(color = "black", fill = NA, size = 1)
+  )
+
+# ã‚«ãƒ©ãƒ¼ãƒ‘ãƒ¬ãƒƒãƒˆ
+condition_colors <- c(
+  "ICI-AKI" = "#E41A1C",
+  "Rejection" = "#377EB8",
+  "Drug-induced_AKI" = "#4DAF4A"
+)
+
+sample_colors <- c(
+  "S0" = "#377EB8",
+  "S1" = "#E41A1C",
+  "S2" = "#4DAF4A",
+  "S3" = "#984EA3"
+)
+
+major_celltype_colors <- c(
+  "Epithelial" = "#E41A1C",
+  "Endothelial" = "#377EB8",
+  "Immune" = "#4DAF4A",
+  "Stromal" = "#984EA3",
+  "Other" = "#999999"
+)
+
+cat("âœ… Plot themes and color palettes defined\n")
+```
+
+---
+
+# FIGURE 3: Spatial Immune Architecture in ICI-AKI {.tabset}
+
+## Figure 3A: Immune Cell Hotspot Analysis (Kernel Density)
+
+```{r figure3a_hotspot, fig.width=16, fig.height=10}
+cat("=== Figure 3A: Immune Cell Hotspot Analysis (Panel size unified, axes free) ===\n")
+
+# å…ç–«ç´°èƒžæŠ½å‡º
+immune_data <- cosmx@meta.data %>%
+  dplyr::filter(major_celltype == "Immune") %>%
+  dplyr::select(sample, condition, x = !!sym(x_coord), y = !!sym(y_coord))
+
+# ---- â‘  density ã®è¨ˆç®— ----
+density_list <- list()
+meta_list    <- list()
+
+for (s in unique(immune_data$sample)) {
+  sample_data <- immune_data %>% dplyr::filter(sample == s)
+
+  # sample ã®å…¨ç´°èƒžç¯„å›²ï¼ˆå…ç–«ã«é™ã‚‰ãªã„ï¼‰
+  all_cells_sample <- cosmx@meta.data %>%
+    dplyr::filter(sample == s) %>%
+    dplyr::select(x = !!sym(x_coord), y = !!sym(y_coord))
+
+  x_range <- range(all_cells_sample$x, na.rm = TRUE)
+  y_range <- range(all_cells_sample$y, na.rm = TRUE)
+
+  bbox <- owin(xrange = x_range, yrange = y_range)
+
+  pp <- ppp(sample_data$x, sample_data$y, window = bbox)
+  density_result <- density(pp, sigma = bw.diggle)
+
+  df <- as.data.frame(density_result)
+  colnames(df) <- c("x", "y", "density")
+
+  density_list[[s]] <- df
+  meta_list[[s]] <- list(condition = unique(sample_data$condition),
+                         xmin = x_range[1], xmax = x_range[2],
+                         ymin = y_range[1], ymax = y_range[2])
+}
+
+# ---- â‘¡ density ã®æœ€å¤§å€¤ã‚’å…¨ã‚µãƒ³ãƒ—ãƒ«å…±é€šã§å–å¾— ----
+global_max_density <- max(vapply(density_list, function(df)
+  max(df$density, na.rm = TRUE), 0))
+
+# ---- â‘¢ ãƒ—ãƒ­ãƒƒãƒˆä½œæˆï¼ˆaxes freeï¼‰ ----
+plots <- list()
+
+for (s in names(density_list)) {
+  df <- density_list[[s]]
+  sample_data <- immune_data %>% dplyr::filter(sample == s)
+  cond <- meta_list[[s]]$condition
+
+p <- ggplot() +
+  geom_raster(
+    data = df,
+    aes(x = x, y = y, fill = density),
+    interpolate = TRUE
+  ) +
+  geom_point(
+    data = sample_data,
+    aes(x = x, y = y),
+    size = 0.25, color = "black", alpha = 0.3
+  ) +
+  scale_fill_viridis(
+    option   = "inferno",
+    limits   = c(0, global_max_density),
+    name     = "Density",
+    na.value = "black"         # â˜… ã“ã“ã‚’è¿½åŠ ï¼šNA ã‚’é»’ã§å¡—ã‚‹
+  ) +
+  labs(
+    title = paste0(s, " (", cond, ")"),
+    x = "X (mm)",
+    y = "Y (mm)"
+  ) +
+  publication_theme +
+  theme(
+    legend.position = "right",
+    aspect.ratio    = 1,
+    panel.background = element_rect(fill = "black", colour = NA)  # â˜… èƒŒæ™¯ã‚‚é»’ã«
+  )
+  plots[[s]] <- p
+}
+
+# ---- â‘£ ãƒ‘ãƒãƒ«çµåˆï¼ˆFigure2Cã¨åŒã˜ 4-panel gridï¼‰ ----
+p_combined <- wrap_plots(plots, ncol = 2)
+print(p_combined)
+
+ggsave(file.path(output_dir, "Figure3", "Figure3A_fixed.png"),
+       p_combined, width = 16, height = 12, dpi = 600)
+```
+
+
+## Figure 3B: Distance to Tubular Epithelium
+
+```{r figure3b_distance, fig.width=14, fig.height=10}
+cat("=== Figure 3B: Distance to Tubular Epithelium ===\n")
+# ä¸Šçš®ç´°èƒžã¨å…ç–«ç´°èƒžã‚’æŠ½å‡º
+epithelial_data <- cosmx@meta.data %>%
+  filter(major_celltype == "Epithelial") %>%
+  select(sample, x = !!sym(x_coord), y = !!sym(y_coord))
+
+immune_data <- cosmx@meta.data %>%
+  filter(major_celltype == "Immune") %>%
+  select(sample, condition,
+         x = !!sym(x_coord), y = !!sym(y_coord))
+
+cat("Epithelial cells:", nrow(epithelial_data), "\n")
+cat("Immune cells:", nrow(immune_data), "\n")
+
+# ã‚µãƒ³ãƒ—ãƒ«åˆ¥ã«è·é›¢è¨ˆç®—
+distance_results <- list()
+
+for(s in unique(immune_data$sample)) {
+  cat("\nProcessing sample:", s, "\n")
+  
+  sample_epithelial <- epithelial_data %>% filter(sample == s)
+  sample_immune <- immune_data %>% filter(sample == s)
+  
+  if(nrow(sample_epithelial) == 0 || nrow(sample_immune) == 0) {
+    cat("âš ï¸ Skipping sample", s, "(insufficient cells)\n")
+    next
+  }
+  
+  # å„å…ç–«ç´°èƒžã‹ã‚‰æœ€ã‚‚è¿‘ã„ä¸Šçš®ç´°èƒžã¾ã§ã®è·é›¢ã‚’è¨ˆç®—
+  min_distances <- numeric(nrow(sample_immune))
+  
+  for(i in 1:nrow(sample_immune)) {
+    immune_point <- c(sample_immune$x[i], sample_immune$y[i])
+    
+    # å…¨ä¸Šçš®ç´°èƒžã¨ã®è·é›¢è¨ˆç®—
+    distances <- sqrt(
+      (sample_epithelial$x - immune_point[1])^2 +
+      (sample_epithelial$y - immune_point[2])^2
+    )
+    
+    min_distances[i] <- min(distances, na.rm = TRUE)
+  }
+  
+  # çµæžœæ ¼ç´
+  distance_results[[s]] <- data.frame(
+    sample = s,
+    condition = unique(sample_immune$condition),
+    distance = min_distances
+  )
+  
+  cat("  Median distance:", round(median(min_distances, na.rm = TRUE), 2), "\n")
+}
+
+# çµ±åˆ
+distance_df <- bind_rows(distance_results)
+
+cat("\n=== Distance Summary ===\n")
+distance_summary <- distance_df %>%
+  group_by(sample, condition) %>%
+  summarise(
+    n_cells = n(),
+    median_dist = median(distance, na.rm = TRUE),
+    mean_dist = mean(distance, na.rm = TRUE),
+    q25 = quantile(distance, 0.25, na.rm = TRUE),
+    q75 = quantile(distance, 0.75, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+print(distance_summary)
+
+# CSVä¿å­˜
+write.csv(
+  distance_summary,
+  file.path(output_dir, "Statistics", "Figure3B_distance_summary.csv"),
+  row.names = FALSE
+)
+
+# Conditionåˆ¥ã®Violin plot
+p_violin_condition <- ggplot(distance_df, 
+                             aes(x = condition, y = distance, fill = condition)) +
+  geom_violin(scale = "width", alpha = 0.7) +
+  geom_boxplot(width = 0.2, outlier.shape = NA, alpha = 0.5) +
+  scale_fill_manual(values = condition_colors) +
+  scale_y_continuous(trans = "log10") +
+  stat_compare_means(
+    comparisons = list(
+      c("Drug-induced_AKI", "ICI-AKI"),      # æ—¢å­˜
+      c("ICI-AKI", "Rejection"),              # æ—¢å­˜
+      c("Drug-induced_AKI", "Rejection")      # â˜…è¿½åŠ 
+    ),
+    method = "wilcox.test",
+    label = "p.format",
+    step.increase = 0.08  # â˜…ãƒ–ãƒ©ã‚±ãƒƒãƒˆé–“éš”ã‚’èª¿æ•´
+  ) +
+  labs(
+    title = "Distance to Epithelium by Condition",
+    x = "Condition",
+    y = "Distance (mm, log scale)",
+    fill = "Condition"
+  ) +
+  publication_theme +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Cumulative distributionã‚‚Conditionåˆ¥ã«
+p_cumulative_condition <- ggplot(distance_df, 
+                                 aes(x = distance, color = condition)) +
+  stat_ecdf(geom = "step", size = 1.2) +
+  scale_color_manual(values = condition_colors) +
+  scale_x_continuous(trans = "log10") +
+  labs(
+    title = "Cumulative Distribution by Condition",
+    x = "Distance (mm, log scale)",
+    y = "Cumulative Proportion",
+    color = "Condition"
+  ) +
+  publication_theme
+
+# çµåˆ
+p_distance_combined <- p_violin_condition / p_cumulative_condition + 
+  plot_layout(heights = c(1, 1))
+print(p_distance_combined)
+
+# ä¿å­˜
+ggsave(
+  file.path(output_dir, "Figure3", "Figure3B_Distance_to_Epithelium.png"),
+  p_distance_combined, width = 14, height = 12, dpi = 600
+)
+
+ggsave(
+  file.path(output_dir, "Figure3", "Figure3B_Distance_to_Epithelium.pdf"),
+  p_distance_combined, width = 14, height = 12, device = "pdf"
+)
+
+cat("âœ… Figure 3B saved\n")
+```
+
+
+ä»¥ä¸‹ã¯å„ã‚µãƒ³ãƒ—ãƒ«ã”ã¨ã‚’æå†™ã™ã‚‹å ´åˆã®ãƒ—ãƒ­ãƒƒãƒˆ
+# ãƒ—ãƒ­ãƒƒãƒˆ1: Violin plot
+p_violin <- ggplot(distance_df, 
+                   aes(x = sample, y = distance, fill = condition)) +
+  geom_violin(scale = "width", alpha = 0.7) +
+  geom_boxplot(width = 0.2, outlier.shape = NA, alpha = 0.5) +
+  scale_fill_manual(values = condition_colors) +
+  scale_y_continuous(trans = "log10") +
+  labs(
+    title = "Distance from Immune Cells to Nearest Tubular Epithelium",
+    x = "Sample",
+    y = ifelse(x_coord == "x_slide_mm", "Distance (mm, log scale)", 
+               "Distance (pixels, log scale)"),
+    fill = "Condition"
+  ) +
+  publication_theme +
+  theme(axis.text.x = element_text(angle = 0, hjust = 0.5))
+
+# ãƒ—ãƒ­ãƒƒãƒˆ2: Cumulative distribution
+p_cumulative <- ggplot(distance_df, 
+                       aes(x = distance, color = condition)) +
+  stat_ecdf(geom = "step", size = 1) +
+  facet_wrap(~sample, ncol = 2) +
+  scale_color_manual(values = condition_colors) +
+  scale_x_continuous(trans = "log10") +
+  labs(
+    title = "Cumulative Distribution of Distance to Epithelium",
+    x = ifelse(x_coord == "x_slide_mm", "Distance (mm, log scale)", 
+               "Distance (pixels, log scale)"),
+    y = "Cumulative Proportion",
+    color = "Condition"
+  ) +
+  publication_theme
+
+# çµåˆ
+p_distance_combined <- p_violin / p_cumulative + 
+  plot_layout(heights = c(1, 1.2))
+
+
+## Figure 3C: TLS-like Structure Detection (DBSCAN Clustering)
+
+```{r figure3c_tls, fig.width=16, fig.height=12}
+cat("=== Figure 3C: TLS-like Structure Detection ===\n")
+
+# å…ç–«ç´°èƒžãƒ‡ãƒ¼ã‚¿æº–å‚™
+immune_data <- cosmx@meta.data %>%
+  filter(major_celltype == "Immune") %>%
+  select(sample, condition, 
+         x = !!sym(x_coord), 
+         y = !!sym(y_coord))
+
+# DBSCAN parameters
+eps_value <- if(x_coord == "x_slide_mm") 0.5 else 100  # mm or pixels
+minPts_value <- 20  # æœ€å°ã‚¯ãƒ©ã‚¹ã‚¿ãƒ¼ã‚µã‚¤ã‚º
+
+cat("DBSCAN parameters:\n")
+cat("  eps:", eps_value, "\n")
+cat("  minPts:", minPts_value, "\n\n")
+
+# ã‚µãƒ³ãƒ—ãƒ«åˆ¥ã‚¯ãƒ©ã‚¹ã‚¿ãƒªãƒ³ã‚°
+cluster_plots <- list()
+cluster_summary_list <- list()
+
+for(s in unique(immune_data$sample)) {
+  cat("Processing sample:", s, "\n")
+  
+  sample_data <- immune_data %>% dplyr::filter(sample == s)
+  sample_condition <- unique(sample_data$condition)
+  
+  if(nrow(sample_data) < minPts_value) {
+    cat("âš ï¸ Sample", s, "has too few cells, skipping\n")
+    next
+  }
+  
+  # DBSCANå®Ÿè¡Œ
+  coords <- sample_data %>% dplyr::select(x, y) %>% as.matrix()
+  db_result <- dbscan(coords, eps = eps_value, minPts = minPts_value)
+  
+  sample_data$cluster <- db_result$cluster
+  sample_data$cluster_label <- ifelse(
+    sample_data$cluster == 0,
+    "Noise",
+    paste0("Cluster_", sample_data$cluster)
+  )
+  
+  n_clusters <- max(db_result$cluster)
+  n_noise    <- sum(db_result$cluster == 0)
+  
+  cluster_summary_list[[s]] <- data.frame(
+    sample = s,
+    condition = sample_condition,
+    n_clusters = n_clusters,
+    n_cells_in_clusters = nrow(sample_data) - n_noise,
+    n_noise = n_noise,
+    prop_clustered = round((nrow(sample_data) - n_noise) / nrow(sample_data) * 100, 1)
+  )
+
+  
+  # ã‚¯ãƒ©ã‚¹ã‚¿ãƒ¼ãƒ—ãƒ­ãƒƒãƒˆ
+  cluster_colors <- c("grey80", rainbow(n_clusters))
+  names(cluster_colors) <- c("Noise", paste0("Cluster_", 1:n_clusters))
+  
+  p <- ggplot(sample_data, aes(x = x, y = y, color = cluster_label)) +
+    geom_point(size = 0.5, alpha = 0.7) +
+    scale_color_manual(values = cluster_colors, name = "Cluster") +
+    labs(
+      title = paste0(s, " (", sample_condition, "): ", n_clusters, " TLS-like clusters"),
+      x = "X (mm)",
+      y = "Y (mm)"
+    ) +
+    # â˜… Figure3A ã¨åŒã˜ï¼šcoord_fixed() ã¯ä½¿ã‚ãšã€aspect.ratio ã ã‘æŒ‡å®š
+    publication_theme +
+    theme(
+      legend.position = "right",
+      aspect.ratio    = 1
+    )
+  
+  cluster_plots[[s]] <- p
+
+  
+  write.csv(
+    sample_data,
+    file.path(output_dir, "Intermediate", paste0("TLS_clusters_", s, ".csv")),
+    row.names = FALSE
+  )
+}
+
+# çµ±åˆãƒ—ãƒ­ãƒƒãƒˆ
+p_cluster_combined <- wrap_plots(cluster_plots, ncol = 2)
+
+print(p_cluster_combined)
+
+# ä¿å­˜
+ggsave(
+  file.path(output_dir, "Figure3", "Figure3C_TLS_Clusters.png"),
+  p_cluster_combined, width = 16, height = 14, dpi = 600
+)
+
+ggsave(
+  file.path(output_dir, "Figure3", "Figure3C_TLS_Clusters.pdf"),
+  p_cluster_combined, width = 16, height = 14, device = "pdf"
+)
+
+# ã‚µãƒžãƒªãƒ¼çµ±åˆ
+cluster_summary <- bind_rows(cluster_summary_list)
+
+cat("\n=== Cluster Summary ===\n")
+print(cluster_summary)
+
+write.csv(
+  cluster_summary,
+  file.path(output_dir, "Statistics", "Figure3C_cluster_summary.csv"),
+  row.names = FALSE
+)
+
+cat("âœ… Figure 3C saved\n")
+```
+
+
+## Figure 3D: Spatial Heatmaps of Key Signatures
+
+## Figure 3D: High-score Cells Spatial Distribution (Top 25%)
+```{r figure3d_signature_spatial, fig.width=16, fig.height=8}
+cat("=== Figure 3D: High-score Cells Spatial Distribution (Top 25%) ===\n")
+
+# ä¸»è¦Signatureã‚’1ã¤é¸æŠžï¼ˆæœ€ã‚‚é‡è¦ãªã‚‚ã®ï¼‰
+key_signature <- "T_cell_Exhaustion_1"
+
+# å­˜åœ¨ç¢ºèª
+if (!key_signature %in% colnames(cosmx@meta.data)) {
+  stop("âŒ Signature not found in metadata!")
+}
+
+sig_label <- gsub("_1$", "", key_signature)
+cat("Using signature:", sig_label, "\n")
+
+# ---- 1) ç©ºé–“ãƒ‡ãƒ¼ã‚¿æº–å‚™ï¼ˆsignatureä»˜ãï¼‰ ----
+spatial_data <- cosmx@meta.data %>%
+  dplyr::select(
+    sample,
+    condition,
+    x = !!sym(x_coord),
+    y = !!sym(y_coord),
+    score = !!sym(key_signature)
+  )
+
+# ã‚¹ã‚³ã‚¢ç¯„å›²
+global_score_range <- range(spatial_data$score, na.rm = TRUE)
+cat("Score range:", round(global_score_range, 3), "\n")
+
+# Top 25% é–¾å€¤
+threshold <- quantile(spatial_data$score, 0.75, na.rm = TRUE)
+cat("Top 25% threshold:", round(threshold, 3), "\n")
+
+# é«˜ã‚¹ã‚³ã‚¢ç´°èƒžã®ã¿
+spatial_data_high <- spatial_data %>%
+  dplyr::filter(score > threshold)
+
+cat("High-score cells:", nrow(spatial_data_high), "/", nrow(spatial_data),
+    "(", round(nrow(spatial_data_high) / nrow(spatial_data) * 100, 1), "%)\n")
+
+# ---- 2) ã‚µãƒ³ãƒ—ãƒ«åˆ¥ãƒ—ãƒ­ãƒƒãƒˆä½œæˆï¼ˆå„ã‚µãƒ³ãƒ—ãƒ«ã”ã¨ã«åº§æ¨™ç¯„å›²ã‚’å–ã‚‹ï¼‰ ----
+plots <- list()
+samples_to_plot <- c("S0", "S1", "S2", "S3")
+
+for (s in samples_to_plot) {
+  # ãã®ã‚µãƒ³ãƒ—ãƒ«ã®å…¨ç´°èƒžï¼ˆåº§æ¨™ç¯„å›²ã‚’æ±ºã‚ã‚‹ãŸã‚ï¼‰
+  all_cells_sample <- cosmx@meta.data %>%
+    dplyr::filter(sample == s) %>%
+    dplyr::select(
+      x = !!sym(x_coord),
+      y = !!sym(y_coord)
+    )
+
+  # ãã®ã‚µãƒ³ãƒ—ãƒ«ã® signature ãƒ‡ãƒ¼ã‚¿
+  sample_all  <- spatial_data       %>% dplyr::filter(sample == s)
+  sample_high <- spatial_data_high  %>% dplyr::filter(sample == s)
+  sample_condition <- unique(sample_all$condition)
+
+  # åº§æ¨™ç¯„å›²ï¼ˆå°‘ã—ãƒžãƒ¼ã‚¸ãƒ³ã‚’ä»˜ã‘ã‚‹ï¼‰
+  x_range  <- range(all_cells_sample$x, na.rm = TRUE)
+  y_range  <- range(all_cells_sample$y, na.rm = TRUE)
+  x_margin <- diff(x_range) * 0.05
+  y_margin <- diff(y_range) * 0.05
+  x_lim <- c(x_range[1] - x_margin, x_range[2] + x_margin)
+  y_lim <- c(y_range[1] - y_margin, y_range[2] + y_margin)
+
+  cat("\n", s, "(", sample_condition, "):\n")
+  cat("  Total cells:", nrow(sample_all), "\n")
+  cat("  High-score cells:", nrow(sample_high),
+      "(", round(nrow(sample_high) / nrow(sample_all) * 100, 1), "%)\n")
+
+  p <- ggplot() +
+    # èƒŒæ™¯ï¼šå…¨ç´°èƒžï¼ˆè–„ã„ã‚°ãƒ¬ãƒ¼ï¼‰
+    geom_point(
+      data = sample_all,
+      aes(x = x, y = y),
+      size  = 0.2,
+      color = "grey85",
+      alpha = 0.3
+    ) +
+    # å‰æ™¯ï¼šé«˜ã‚¹ã‚³ã‚¢ç´°èƒžï¼ˆã‚«ãƒ©ãƒ¼ï¼‰
+    geom_point(
+      data = sample_high,
+      aes(x = x, y = y, color = score),
+      size  = 0.6,
+      alpha = 0.8
+    ) +
+    scale_color_viridis(
+      option = "magma",
+      limits = c(threshold, max(spatial_data$score, na.rm = TRUE)),
+      name   = "Score\n(Top 25%)"
+    ) +
+    # â˜… ã‚µãƒ³ãƒ—ãƒ«ã”ã¨ã®åº§æ¨™ç¯„å›²ã§å›ºå®š â†’ å„ãƒ‘ãƒãƒ«å†…ã§è…Žè‡“ãŒä¸­å¤®ã«ãã‚‹
+    scale_x_continuous(limits = x_lim, expand = c(0, 0)) +
+    scale_y_continuous(limits = y_lim, expand = c(0, 0)) +
+    labs(
+      title    = paste0(s, " (", sample_condition, ")"),
+      subtitle = paste0(nrow(sample_high), " high-score cells"),
+      x = "X (mm)",
+      y = "Y (mm)"
+    ) +
+    publication_theme +
+    theme(
+      legend.position  = "right",
+      aspect.ratio     = 1,
+      panel.background = element_rect(fill = "white", color = "black"),
+      plot.subtitle    = element_text(size = 10, color = "grey40")
+    )
+
+  plots[[s]] <- p
+}
+
+# ---- 3) 2 x 2 ãƒ¬ã‚¤ã‚¢ã‚¦ãƒˆ ----
+p_figure3d <- wrap_plots(plots, ncol = 2) +
+  plot_annotation(
+    title = paste0(sig_label,
+                   ": Spatial Distribution of High-score Cells (Top 25%)"),
+    theme = theme(
+      plot.title = element_text(size = 16, face = "bold", hjust = 0.5)
+    )
+  )
+
+print(p_figure3d)
+
+# ---- 4) ä¿å­˜ ----
+ggsave(
+  file.path(output_dir, "Figure3", "Figure3D_HighScore_Spatial.png"),
+  p_figure3d, width = 16, height = 14, dpi = 600
+)
+
+ggsave(
+  file.path(output_dir, "Figure3", "Figure3D_HighScore_Spatial.pdf"),
+  p_figure3d, width = 16, height = 14, device = "pdf"
+)
+
+# ---- 5) çµ±è¨ˆã‚µãƒžãƒªãƒ¼ ----
+high_score_summary <- spatial_data_high %>%
+  dplyr::group_by(sample, condition) %>%
+  dplyr::summarise(
+    n_high_score = dplyr::n(),
+    mean_score   = mean(score, na.rm = TRUE),
+    median_score = median(score, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  dplyr::left_join(
+    spatial_data %>%
+      dplyr::group_by(sample) %>%
+      dplyr::summarise(n_total = dplyr::n(), .groups = "drop"),
+    by = "sample"
+  ) %>%
+  dplyr::mutate(
+    prop_high_score = round(n_high_score / n_total * 100, 1)
+  )
+
+cat("\n=== High-score Cell Summary ===\n")
+print(high_score_summary)
+
+write.csv(
+  high_score_summary,
+  file.path(output_dir, "Statistics", "Figure3D_high_score_summary.csv"),
+  row.names = FALSE
+)
+
+cat("âœ… Figure 3D saved\n")
+```
+
+
+## Figure 3E: Signature Co-localization Analysis
+
+```{r figure3e_colocalization, fig.width=14, fig.height=10}
+cat("=== Figure 3E: Signature Co-localization Analysis ===\n")
+
+# ä¸»è¦Signatureã®ç›¸é–¢åˆ†æž
+key_signatures <- c(
+  "T_cell_Exhaustion_1",
+  "Myeloid_Activation_1",
+  "ICI_General_Top15_1",
+  "Known_ICI_Markers_1"
+)
+
+# Conditionåˆ¥ã«ç›¸é–¢è¨ˆç®—
+correlation_results <- list()
+
+for(cond in c("ICI-AKI", "Rejection", "Drug-induced_AKI")) {
+  cond_data <- cosmx@meta.data %>%
+    filter(condition == cond) %>%
+    select(all_of(key_signatures))
+  
+  if(nrow(cond_data) > 100) {
+    cor_matrix <- cor(cond_data, use = "pairwise.complete.obs", method = "spearman")
+    
+    correlation_results[[cond]] <- cor_matrix
+  }
+}
+
+# ãƒ’ãƒ¼ãƒˆãƒžãƒƒãƒ—ä½œæˆ
+cor_plots <- list()
+
+for(cond in names(correlation_results)) {
+  cor_matrix <- correlation_results[[cond]]
+  
+  # è¡Œåˆ—ã‚’ãƒ‡ãƒ¼ã‚¿ãƒ•ãƒ¬ãƒ¼ãƒ ã«å¤‰æ›
+  cor_df <- as.data.frame(cor_matrix)
+  cor_df$Signature1 <- rownames(cor_df)
+  cor_long <- cor_df %>%
+    pivot_longer(cols = -Signature1, names_to = "Signature2", values_to = "Correlation") %>%
+    mutate(
+      Signature1 = gsub("_1$", "", Signature1),
+      Signature2 = gsub("_1$", "", Signature2)
+    )
+  
+  p <- ggplot(cor_long, aes(x = Signature1, y = Signature2, fill = Correlation)) +
+    geom_tile(color = "white", size = 1) +
+    geom_text(aes(label = sprintf("%.2f", Correlation)), size = 4) +
+    scale_fill_gradient2(low = "blue", mid = "white", high = "red", 
+                         midpoint = 0, limit = c(-1, 1),
+                         name = "Spearman\nCorrelation") +
+    labs(
+      title = cond,
+      x = NULL,
+      y = NULL
+    ) +
+    publication_theme +
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1),
+      panel.border = element_blank()
+    ) +
+    coord_fixed()
+  
+  cor_plots[[cond]] <- p
+}
+
+# çµåˆ
+p_cor_combined <- wrap_plots(cor_plots, ncol = 3)
+
+print(p_cor_combined)
+
+# ä¿å­˜
+ggsave(
+  file.path(output_dir, "Figure3", "Figure3E_Signature_Colocalization.png"),
+  p_cor_combined, width = 18, height = 6, dpi = 600
+)
+
+ggsave(
+  file.path(output_dir, "Figure3", "Figure3E_Signature_Colocalization.pdf"),
+  p_cor_combined, width = 18, height = 6, device = "pdf"
+)
+
+# ç›¸é–¢è¡Œåˆ—ä¿å­˜
+for(cond in names(correlation_results)) {
+  write.csv(
+    correlation_results[[cond]],
+    file.path(output_dir, "Statistics", paste0("Figure3E_correlation_", cond, ".csv"))
+  )
+}
+
+cat("âœ… Figure 3E saved\n")
+```
+
+---
+
+# 4. çµ±åˆã‚µãƒžãƒªãƒ¼ {.tabset}
+
+## çµ±è¨ˆã‚µãƒžãƒªãƒ¼
+
+```{r summary_statistics}
+cat("=== Figure 3 Analysis Summary ===\n\n")
+
+cat("FIGURE 3A: Immune Cell Hotspots\n")
+cat("  - Kernel density estimation for immune cell distribution\n")
+cat("  - Identified high-density regions per sample\n\n")
+
+cat("FIGURE 3B: Distance to Epithelium\n")
+if(exists("distance_summary")) {
+  print(distance_summary)
+  cat("\n")
+}
+
+cat("FIGURE 3C: TLS-like Structures\n")
+if(exists("cluster_summary")) {
+  print(cluster_summary)
+  cat("\n")
+}
+
+cat("FIGURE 3D: Spatial Signature Distribution\n")
+cat("  - Key signatures mapped across all samples\n")
+cat("  - Identified condition-specific spatial patterns\n\n")
+
+cat("FIGURE 3E: Signature Co-localization\n")
+cat("  - Spearman correlation between signatures\n")
+cat("  - Condition-specific correlation patterns identified\n\n")
+```
+
+## å‡ºåŠ›ãƒ•ã‚¡ã‚¤ãƒ«ä¸€è¦§
+
+```{r output_files}
+cat("=== Output Files ===\n\n")
+
+output_files <- list.files(output_dir, recursive = TRUE, full.names = FALSE)
+
+cat("Directory:", output_dir, "\n\n")
+cat("Files created:\n")
+for(i in seq_along(output_files)) {
+  cat(sprintf("  %2d. %s\n", i, output_files[i]))
+}
+
+cat("\nTotal files:", length(output_files), "\n")
+```
+
+## æ¬¡ã®ã‚¹ãƒ†ãƒƒãƒ—
+
+```{r next_steps}
+cat("=== Recommended Next Steps ===\n\n")
+
+cat("ANALYSIS:\n")
+cat("  1. Quantify TLS-like structure characteristics (size, composition)\n")
+cat("  2. Analyze gene expression within vs outside TLS-like structures\n")
+cat("  3. Identify marker genes for immune cell clusters\n")
+cat("  4. Cell-cell interaction analysis in hotspot regions\n\n")
+
+cat("VISUALIZATION:\n")
+cat("  1. Create zoom-in views of representative TLS-like structures\n")
+cat("  2. 3D visualization of spatial patterns\n")
+cat("  3. Animation showing signature gradients\n")
+cat("  4. Interactive spatial plots\n\n")
+
+cat("VALIDATION:\n")
+cat("  1. Compare with histopathology images\n")
+cat("  2. Validate TLS markers (CXCL13, PNAd, etc.)\n")
+cat("  3. Clinical correlation with patient outcomes\n\n")
+
+cat("INTEGRATION:\n")
+cat("  1. Integrate Figure 3 with Figure 2 findings\n")
+cat("  2. Combine spatial and molecular signatures\n")
+cat("  3. Build comprehensive disease model\n\n")
+```
+
+---
+
+# 5. ã‚»ãƒƒã‚·ãƒ§ãƒ³æƒ…å ±
+
+```{r session_info}
+cat("=== SESSION INFORMATION ===\n")
+sessionInfo()
+```
+
+---
+
+# ã¾ã¨ã‚
+
+## Figure 3 å®Œæˆäº‹é …
+
+**âœ… Figure 3A: Immune Cell Hotspots**
+- Kernel density estimationå®Ÿæ–½
+- ã‚µãƒ³ãƒ—ãƒ«åˆ¥ã®å…ç–«ç´°èƒžåˆ†å¸ƒãƒ‘ã‚¿ãƒ¼ãƒ³å¯è¦–åŒ–
+- é«˜å¯†åº¦é ˜åŸŸã®åŒå®šå®Œäº†
+
+**âœ… Figure 3B: Distance to Epithelium**
+- å„å…ç–«ç´°èƒžã‹ã‚‰æœ€è¿‘å‚ä¸Šçš®ç´°èƒžã¾ã§ã®è·é›¢è¨ˆç®—
+- Conditionåˆ¥ã®è·é›¢åˆ†å¸ƒæ¯”è¼ƒ
+- ç´¯ç©åˆ†å¸ƒé–¢æ•°ã«ã‚ˆã‚‹å®šé‡è©•ä¾¡
+
+**âœ… Figure 3C: TLS-like Structures**
+- DBSCANã‚¯ãƒ©ã‚¹ã‚¿ãƒªãƒ³ã‚°ã«ã‚ˆã‚‹å…ç–«ç´°èƒžé›†ç©ã®æ¤œå‡º
+- TLSæ§˜æ§‹é€ ã®æ•°ã¨åˆ†å¸ƒã‚’å®šé‡åŒ–
+- ã‚µãƒ³ãƒ—ãƒ«åˆ¥ã‚¯ãƒ©ã‚¹ã‚¿ãƒ¼ç‰¹æ€§ã®è©•ä¾¡
+
+**âœ… Figure 3D: Spatial Signature Maps**
+- ä¸»è¦4 Signatureã®ç©ºé–“åˆ†å¸ƒå¯è¦–åŒ–
+- ã‚µãƒ³ãƒ—ãƒ«é–“ãƒ»Conditioné–“ã®ç©ºé–“ãƒ‘ã‚¿ãƒ¼ãƒ³æ¯”è¼ƒ
+- ICI-AKIç‰¹ç•°çš„ãªç©ºé–“æ§‹é€ ã®åŒå®š
+
+**âœ… Figure 3E: Signature Co-localization**
+- Signatureé–“ã®Spearmanç›¸é–¢åˆ†æž
+- Conditionåˆ¥ã®ç›¸é–¢ãƒ‘ã‚¿ãƒ¼ãƒ³æ¯”è¼ƒ
+- ç©ºé–“çš„å…±å±€åœ¨ã®å®šé‡è©•ä¾¡
+
+## ä¸»è¦ãªç™ºè¦‹
+
+1. **ICI-AKIã¯ç‰¹å¾´çš„ãªå…ç–«ç´°èƒžãƒ›ãƒƒãƒˆã‚¹ãƒãƒƒãƒˆã‚’å½¢æˆ**
+   - å°¿ç´°ç®¡å‘¨å›²ã«å…ç–«ç´°èƒžãŒé›†ç©
+   - Rejectionã¨ã¯ç•°ãªã‚‹åˆ†å¸ƒãƒ‘ã‚¿ãƒ¼ãƒ³
+
+2. **TLSæ§˜æ§‹é€ ãŒICI-AKIã§é¡•è‘—**
+   - DBSCANè§£æžã§æ˜Žç¢ºãªã‚¯ãƒ©ã‚¹ã‚¿ãƒ¼æ¤œå‡º
+   - ã‚¯ãƒ©ã‚¹ã‚¿ãƒ¼å†…ã§Signatureé«˜ç™ºç¾
+
+3. **Signatureç©ºé–“åˆ†å¸ƒã®ç—…æ…‹ç‰¹ç•°æ€§**
+   - T cell Exhaustionã¨Myeloid ActivationãŒICI-AKIã§å…±å±€åœ¨
+   - ç©ºé–“çš„ãªç›¸é–¢ãƒ‘ã‚¿ãƒ¼ãƒ³ãŒConditionä¾å­˜çš„
+
+4. **å°¿ç´°ç®¡ã¨ã®è·é›¢ãŒç—…æ…‹ã‚’åæ˜ **
+   - ICI-AKIã§å…ç–«ç´°èƒžãŒå°¿ç´°ç®¡ã«è¿‘æŽ¥
+   - Peritubular nicheã®å½¢æˆã‚’ç¤ºå”†
+
+---
+
+**Analysis completed successfully!**

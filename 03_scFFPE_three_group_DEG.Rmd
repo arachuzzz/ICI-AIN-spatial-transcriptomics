@@ -1,0 +1,1588 @@
+**3ç¾¤æ¯”è¼ƒã®å„ªä½æ€§**:
+1. **çœŸã®ICIç‰¹ç•°æ€§**: ä»–ã®è…Žç‚Žã¨ã®---
+title: "ICI-AKI vs Rejection vs Drug-AIN 3ç¾¤æ¯”è¼ƒè§£æž v3"
+subtitle: "Tç´°èƒžãƒ»CD45é™½æ€§ç´°èƒžå…¨éºä¼å­ç¶²ç¾…çš„è§£æžç‰ˆ"
+author: "Your Name"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+    code_folding: show
+    theme: flatly
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  fig.width = 12,
+  fig.height = 8,
+  dpi = 300
+)
+```
+
+# è§£æžæ¦‚è¦
+
+**ç ”ç©¶ç›®çš„**: å…ç–«ãƒã‚§ãƒƒã‚¯ãƒã‚¤ãƒ³ãƒˆé˜»å®³è–¬ã«ã‚ˆã‚‹æ€¥æ€§é–“è³ªæ€§è…Žç‚Žï¼ˆICI-AKIï¼‰ã¨ä»–ã®è…Žç‚Žã¨ã®æ¯”è¼ƒã«ã‚ˆã‚‹ã€ICIç‰¹ç•°çš„åˆ†å­ãƒ¡ã‚«ãƒ‹ã‚ºãƒ ã®å…¨éºä¼å­ç¶²ç¾…çš„è§£æ˜Ž
+
+**3ç¾¤æ¯”è¼ƒè¨­è¨ˆ**: 
+- **ICI-AKIã‚°ãƒ«ãƒ¼ãƒ—**: S1 + S3ï¼ˆå…ç–«ãƒã‚§ãƒƒã‚¯ãƒã‚¤ãƒ³ãƒˆé˜»å®³è–¬ã«ã‚ˆã‚‹è…Žç‚Žï¼‰
+- **Rejectionã‚°ãƒ«ãƒ¼ãƒ—**: S0ï¼ˆç§»æ¤æ‹’çµ¶åå¿œï¼‰
+- **Drug-AINã‚°ãƒ«ãƒ¼ãƒ—**: S2ï¼ˆä»–ã®è–¬å‰¤æ€§è…Žç‚Žï¼‰
+
+**è§£æžç¯„å›²**: Tç´°èƒžãƒ»CD45é™½æ€§ç´°èƒžã§ã®å…¨éºä¼å­ç¶²ç¾…çš„3ç¾¤æ¯”è¼ƒ
+
+**ä»®èª¬**: ICI-AKIã§ã¯æ‹’çµ¶åå¿œã‚„è–¬å‰¤æ€§è…Žç‚Žã¨ã¯ç•°ãªã‚‹ç‰¹ç•°çš„åˆ†å­ã‚·ã‚°ãƒãƒãƒ£ãŒè¦³å¯Ÿã•ã‚Œã‚‹
+
+---
+
+# 1. ãƒ©ã‚¤ãƒ–ãƒ©ãƒªã¨ãƒ‡ãƒ¼ã‚¿èª­ã¿è¾¼ã¿
+
+```{r libraries}
+# å¿…è¦ãƒ©ã‚¤ãƒ–ãƒ©ãƒªã®èª­ã¿è¾¼ã¿
+suppressPackageStartupMessages({
+  library(Seurat)
+  library(dplyr)
+  library(ggplot2)
+  library(patchwork)
+  library(RColorBrewer)
+  library(viridis)
+  library(pheatmap)
+  library(gridExtra)
+  library(ggrepel)
+  library(tibble)   
+})
+
+# ãƒãƒ¼ã‚¸ãƒ§ãƒ³ç¢ºèª
+cat("Seurat version:", as.character(packageVersion("Seurat")), "\n")
+cat("R version:", R.version.string, "\n")
+```
+
+```{r data_loading}
+# ã‚¢ãƒŽãƒ†ãƒ¼ã‚·ãƒ§ãƒ³ä»˜ããƒ‡ãƒ¼ã‚¿ã®èª­ã¿è¾¼ã¿
+scffpe_obj <- readRDS("/Users/HiroyukiArai/Documents/å¤§å­¦é™¢/ç ”ç©¶çµæžœ/2024æ‘ä¸Šå…ˆç”ŸCosMX/202406 single cell FFPE data/scFFPE_kidney_analysis/results/scffpe_additional_analysis_complete_doublet_removed.rds")
+
+# ãƒ‡ãƒ¼ã‚¿èª­ã¿è¾¼ã¿ç¢ºèª
+cat("ãƒ‡ãƒ¼ã‚¿èª­ã¿è¾¼ã¿å®Œäº†\n")
+cat("ç·ç´°èƒžæ•°:", ncol(scffpe_obj), "\n")
+
+# æ–°ã—ã„ã‚¢ãƒŽãƒ†ãƒ¼ã‚·ãƒ§ãƒ³æƒ…å ±ã®ç¢ºèª
+cat("åˆ©ç”¨å¯èƒ½ãªã‚¢ãƒŽãƒ†ãƒ¼ã‚·ãƒ§ãƒ³åˆ—:", paste(colnames(scffpe_obj@meta.data), collapse = ", "), "\n")
+
+if("detailed_celltype" %in% colnames(scffpe_obj@meta.data)) {
+  cat("è©³ç´°ç´°èƒžã‚¿ã‚¤ãƒ—:", paste(unique(scffpe_obj$detailed_celltype), collapse = ", "), "\n")
+}
+
+if("major_celltype" %in% colnames(scffpe_obj@meta.data)) {
+  cat("ä¸»è¦ç´°èƒžã‚¿ã‚¤ãƒ—:", paste(unique(scffpe_obj$major_celltype), collapse = ", "), "\n")
+}
+
+# ã‚µãƒ³ãƒ—ãƒ«åˆ†å¸ƒç¢ºèª
+cat("ã‚µãƒ³ãƒ—ãƒ«åˆ†å¸ƒ:\n")
+print(table(scffpe_obj$orig.ident))
+```
+
+---
+
+# 2. Tç´°èƒžæŠ½å‡ºï¼ˆ3ç¾¤æ¯”è¼ƒç”¨ï¼‰
+
+```{r tcell_extraction_three_groups}
+# ã€é‡è¦ã€‘æ–°ã—ã„è©³ç´°ã‚¢ãƒŽãƒ†ãƒ¼ã‚·ãƒ§ãƒ³ã‚’ä½¿ç”¨ã—ã¦Tç´°èƒžã‚’æŠ½å‡º
+
+# Tç´°èƒžç³»ç´°èƒžã‚¿ã‚¤ãƒ—ã®å®šç¾©ï¼ˆNKTç´°èƒžå«ã‚€ï¼‰
+t_cell_types <- c("T_cell_mixed", "T_cell_CD8", "NK_T_cell", "Treg")
+
+# è©³ç´°ã‚¢ãƒŽãƒ†ãƒ¼ã‚·ãƒ§ãƒ³ã«åŸºã¥ã„ã¦Tç´°èƒžã‚’æŠ½å‡º(CD45é™½æ€§ã§ã‚ã‚‹ã‚‚ã®ã®ã¿æŠ½å‡º)
+t_cells_all <- subset(scffpe_obj, subset = detailed_celltype %in% t_cell_types & CD45_status == "CD45+")
+
+# Tç´°èƒžã®åŸºæœ¬çµ±è¨ˆ
+cat("=== 3ç¾¤æ¯”è¼ƒç”¨ Tç´°èƒžæŠ½å‡ºå®Œäº† ===\n")
+print(paste("ç·Tç´°èƒžæ•°:", ncol(t_cells_all)))
+
+# è©³ç´°Tç´°èƒžã‚¿ã‚¤ãƒ—åˆ¥åˆ†å¸ƒ
+cat("è©³ç´°Tç´°èƒžã‚¿ã‚¤ãƒ—åˆ†å¸ƒ:\n")
+detailed_counts <- table(t_cells_all$detailed_celltype)
+print(detailed_counts)
+
+# ã‚µãƒ³ãƒ—ãƒ«åˆ¥Tç´°èƒžæ•°ã®ç¢ºèª
+sample_counts <- table(t_cells_all$orig.ident)
+cat("ã‚µãƒ³ãƒ—ãƒ«åˆ¥Tç´°èƒžæ•°:\n")
+print(sample_counts)
+
+# 3ç¾¤åˆ†é¡žã®è¨­å®š
+t_cells_all$group <- case_when(
+  t_cells_all$orig.ident %in% c("S1_scFFPE", "S3_scFFPE") ~ "ICI_AKI",
+  t_cells_all$orig.ident == "S0_scFFPE" ~ "Rejection", 
+  t_cells_all$orig.ident == "S2_scFFPE" ~ "Drug_AIN"
+)
+
+cat("\n3ç¾¤åˆ¥Tç´°èƒžæ•°:\n")
+group_counts <- table(t_cells_all$group)
+print(group_counts)
+
+# ã‚µãƒ³ãƒ—ãƒ« Ã— è©³ç´°ç´°èƒžã‚¿ã‚¤ãƒ— Ã— ã‚°ãƒ«ãƒ¼ãƒ— ã‚¯ãƒ­ã‚¹é›†è¨ˆ
+cat("\nã‚µãƒ³ãƒ—ãƒ« Ã— è©³ç´°Tç´°èƒžã‚¿ã‚¤ãƒ— Ã— ã‚°ãƒ«ãƒ¼ãƒ—:\n")
+cross_table <- table(t_cells_all$orig.ident, t_cells_all$detailed_celltype, t_cells_all$group)
+print(cross_table)
+
+# 3ç¾¤ã§ã®è©³ç´°Tç´°èƒžã‚¿ã‚¤ãƒ—åˆ†å¸ƒ
+cat("\n3ç¾¤ Ã— è©³ç´°Tç´°èƒžã‚¿ã‚¤ãƒ—åˆ†å¸ƒ:\n")
+three_group_table <- table(t_cells_all$group, t_cells_all$detailed_celltype)
+print(three_group_table)
+```
+
+---
+
+# 3. Tç´°èƒžæ´»æ€§åŒ–ãƒžãƒ¼ã‚«ãƒ¼è§£æžï¼ˆä»£è¡¨éºä¼å­ï¼‰
+
+```{r activation_markers}
+# Tç´°èƒžæ´»æ€§åŒ–é–¢é€£éºä¼å­ãƒªã‚¹ãƒˆ
+activation_genes <- c(
+  # åŸºæœ¬ãƒžãƒ¼ã‚«ãƒ¼
+  "CD3E", "CD3D", "CD3G",
+  # CD4/CD8
+  "CD4", "CD8A", "CD8B",
+  # æ´»æ€§åŒ–ãƒžãƒ¼ã‚«ãƒ¼
+  "CD25", "CD69", "CD137", "CD274", "PDCD1",
+  # ã‚¨ãƒ•ã‚§ã‚¯ã‚¿ãƒ¼æ©Ÿèƒ½
+  "GZMB", "PRF1", "IFNG", "TNF", "IL2",
+  # ãƒ¡ãƒ¢ãƒªãƒ¼/ãƒŠã‚¤ãƒ¼ãƒ–ãƒžãƒ¼ã‚«ãƒ¼
+  "CD27", "CD28", "CCR7", "CD44",
+  # åˆ¶å¾¡æ€§Tç´°èƒž
+  "FOXP3",
+  # æž¯æ¸‡ãƒžãƒ¼ã‚«ãƒ¼
+  "LAG3", "TIM3", "TIGIT"
+)
+
+# åˆ©ç”¨å¯èƒ½ãªéºä¼å­ã®ç¢ºèª
+available_genes <- activation_genes[activation_genes %in% rownames(t_cells_all)]
+missing_genes <- activation_genes[!activation_genes %in% rownames(t_cells_all)]
+
+cat("è§£æžå¯¾è±¡éºä¼å­æ•°:", length(available_genes), "/", length(activation_genes), "\n")
+cat("åˆ©ç”¨å¯èƒ½ãªéºä¼å­:", paste(available_genes, collapse = ", "), "\n")
+if(length(missing_genes) > 0) {
+  cat("åˆ©ç”¨ä¸å¯èƒ½ãªéºä¼å­:", paste(missing_genes, collapse = ", "), "\n")
+}
+
+# åˆ©ç”¨å¯èƒ½éºä¼å­ã§ã‚«ãƒ†ã‚´ãƒªåˆ†é¡ž
+basic_markers <- intersect(c("CD3E", "CD3D", "CD3G", "CD4", "CD8A"), available_genes)
+activation_markers <- intersect(c("CD69", "CD274", "PDCD1"), available_genes)  
+effector_markers <- intersect(c("GZMB", "PRF1", "IFNG", "TNF", "IL2"), available_genes)
+memory_markers <- intersect(c("CD27", "CD28", "CCR7", "CD44"), available_genes)
+reg_markers <- intersect(c("FOXP3"), available_genes)
+exhaustion_markers <- intersect(c("LAG3", "TIGIT"), available_genes)
+
+cat("\n=== éºä¼å­ã‚«ãƒ†ã‚´ãƒªåˆ†é¡ž ===\n")
+cat("åŸºæœ¬ãƒžãƒ¼ã‚«ãƒ¼:", paste(basic_markers, collapse = ", "), "\n")
+cat("æ´»æ€§åŒ–ãƒžãƒ¼ã‚«ãƒ¼:", paste(activation_markers, collapse = ", "), "\n")
+cat("ã‚¨ãƒ•ã‚§ã‚¯ã‚¿ãƒ¼ãƒžãƒ¼ã‚«ãƒ¼:", paste(effector_markers, collapse = ", "), "\n")
+cat("ãƒ¡ãƒ¢ãƒªãƒ¼ãƒžãƒ¼ã‚«ãƒ¼:", paste(memory_markers, collapse = ", "), "\n")
+cat("åˆ¶å¾¡æ€§ãƒžãƒ¼ã‚«ãƒ¼:", paste(reg_markers, collapse = ", "), "\n")
+cat("æž¯æ¸‡ãƒžãƒ¼ã‚«ãƒ¼:", paste(exhaustion_markers, collapse = ", "), "\n")
+```
+
+---
+
+# 4. éºä¼å­ç™ºç¾ãƒ‡ãƒ¼ã‚¿æº–å‚™ï¼ˆä»£è¡¨éºä¼å­ï¼‰
+
+```{r gene_expression_analysis}
+# éºä¼å­ç™ºç¾ãƒ‡ãƒ¼ã‚¿ã®å–å¾—ï¼ˆFetchDataã‚’ä½¿ç”¨ï¼‰
+expression_data <- FetchData(
+  t_cells_all, 
+  vars = available_genes,
+  slot = "data"  # æ­£è¦åŒ–æ¸ˆã¿ãƒ‡ãƒ¼ã‚¿ã‚’ä½¿ç”¨
+)
+
+# ãƒ¡ã‚¿ãƒ‡ãƒ¼ã‚¿ã®å–å¾—
+meta_cols <- c()
+if("orig.ident" %in% colnames(t_cells_all@meta.data)) {
+  meta_cols <- c(meta_cols, "orig.ident")
+}
+if("detailed_celltype" %in% colnames(t_cells_all@meta.data)) {
+  meta_cols <- c(meta_cols, "detailed_celltype")
+}
+meta_cols <- c(meta_cols, "group")
+
+meta_data <- t_cells_all@meta.data[, meta_cols]
+
+# ãƒ‡ãƒ¼ã‚¿ã®çµåˆ
+combined_data <- cbind(meta_data, expression_data)
+
+cat("éºä¼å­ç™ºç¾ãƒ‡ãƒ¼ã‚¿æº–å‚™å®Œäº†\n")
+cat("ãƒ‡ãƒ¼ã‚¿æ¬¡å…ƒ:", dim(combined_data), "\n")
+cat("3ç¾¤åˆ¥ç´°èƒžæ•°:\n")
+print(table(combined_data$group))
+```
+
+```{r expression_summary}
+# 3ç¾¤åˆ¥éºä¼å­ç™ºç¾ã®è¦ç´„çµ±è¨ˆ
+summary_stats <- combined_data %>%
+  group_by(group) %>%
+  summarise(
+    across(all_of(available_genes), 
+           list(mean = mean, median = median, sd = sd), 
+           .names = "{.col}_{.fn}"),
+    .groups = "drop"
+  )
+
+cat("=== 3ç¾¤åˆ¥ç™ºç¾çµ±è¨ˆï¼ˆä»£è¡¨éºä¼å­ï¼‰ ===\n")
+print("ICI-AKI vs Rejection vs Drug-AIN æ¯”è¼ƒ:")
+print(summary_stats[, 1:10])  # æœ€åˆã®10ã‚«ãƒ©ãƒ ã®ã¿è¡¨ç¤º
+
+# ä¸»è¦éºä¼å­ã®ç™ºç¾ãƒ¬ãƒ™ãƒ«æ¯”è¼ƒ
+key_genes <- intersect(c("CD3E", "CD4", "CD8A", "FOXP3", "GZMB", "IFNG", "PDCD1"), available_genes)
+if(length(key_genes) > 0) {
+  cat("\nä¸»è¦éºä¼å­ã®3ç¾¤å¹³å‡ç™ºç¾é‡:\n")
+  key_summary <- combined_data %>%
+    group_by(group) %>%
+    summarise(across(all_of(key_genes), mean, na.rm = TRUE), .groups = "drop")
+  print(key_summary)
+}
+```
+
+---
+
+# 5. ä»£è¡¨éºä¼å­3ç¾¤é–“æ¯”è¼ƒçµ±è¨ˆè§£æž
+
+```{r three_group_statistics}
+# 3ç¾¤é–“Tç´°èƒžå¤‰åŒ–è§£æžï¼ˆKruskal-Wallisæ¤œå®šï¼‰
+cat("=== ä»£è¡¨éºä¼å­3ç¾¤é–“Tç´°èƒžå¤‰åŒ–è§£æž ===\n")
+
+# çµ±è¨ˆè§£æžå®Ÿè¡Œ
+kruskal_results <- list()
+
+for(gene in available_genes) {
+  
+  # å„ç¾¤ã®ç™ºç¾ãƒ‡ãƒ¼ã‚¿
+  ici_expression <- combined_data[combined_data$group == "ICI_AKI", gene]
+  rejection_expression <- combined_data[combined_data$group == "Rejection", gene]
+  drug_expression <- combined_data[combined_data$group == "Drug_AIN", gene]
+  
+  # NAå€¤ã®é™¤åŽ»
+  ici_clean <- ici_expression[!is.na(ici_expression)]
+  rejection_clean <- rejection_expression[!is.na(rejection_expression)]
+  drug_clean <- drug_expression[!is.na(drug_expression)]
+  
+  cat("éºä¼å­", gene, ": ICI-AKI=", length(ici_clean), 
+      ", Rejection=", length(rejection_clean), 
+      ", Drug-AIN=", length(drug_clean), "cells")
+  
+  if(length(ici_clean) > 10 && length(rejection_clean) > 10 && length(drug_clean) > 10) {
+    # Kruskal-Wallisæ¤œå®šå®Ÿè¡Œ
+    kruskal_result <- kruskal.test(list(ici_clean, rejection_clean, drug_clean))
+    
+    # å„ç¾¤ã®å¹³å‡å€¤
+    ici_mean <- mean(ici_clean)
+    rejection_mean <- mean(rejection_clean)
+    drug_mean <- mean(drug_clean)
+    
+    # Fold Changeè¨ˆç®—ï¼ˆICI-AKI vs ä»–ç¾¤ï¼‰
+    ici_vs_rejection_fc <- ifelse(rejection_mean > 0, ici_mean / rejection_mean, NA)
+    ici_vs_drug_fc <- ifelse(drug_mean > 0, ici_mean / drug_mean, NA)
+    
+    kruskal_results[[gene]] <- data.frame(
+      gene = gene,
+      ici_mean = ici_mean,
+      rejection_mean = rejection_mean,
+      drug_mean = drug_mean,
+      ici_vs_rejection_fc = ici_vs_rejection_fc,
+      ici_vs_drug_fc = ici_vs_drug_fc,
+      ici_vs_rejection_log2fc = ifelse(!is.na(ici_vs_rejection_fc) & ici_vs_rejection_fc > 0, 
+                                      log2(ici_vs_rejection_fc), NA),
+      ici_vs_drug_log2fc = ifelse(!is.na(ici_vs_drug_fc) & ici_vs_drug_fc > 0, 
+                                  log2(ici_vs_drug_fc), NA),
+      p_value = kruskal_result$p.value,
+      stringsAsFactors = FALSE
+    )
+    
+    cat(" â†’ p=", format(kruskal_result$p.value, scientific = TRUE, digits = 3), "\n")
+  } else {
+    cat(" â†’ ã‚¹ã‚­ãƒƒãƒ—: ãƒ‡ãƒ¼ã‚¿ä¸è¶³\n")
+  }
+}
+
+# çµæžœã‚’ãƒ‡ãƒ¼ã‚¿ãƒ•ãƒ¬ãƒ¼ãƒ ã«å¤‰æ›
+if(length(kruskal_results) > 0) {
+  stats_3group_df <- do.call(rbind, kruskal_results)
+  rownames(stats_3group_df) <- NULL
+  
+  # på€¤èª¿æ•´ï¼ˆFDRï¼‰
+  stats_3group_df$p_adj <- p.adjust(stats_3group_df$p_value, method = "BH")
+  
+  # på€¤ã§ã‚½ãƒ¼ãƒˆ
+  stats_3group_df <- stats_3group_df[order(stats_3group_df$p_value), ]
+  
+  cat("\n=== ä»£è¡¨éºä¼å­3ç¾¤é–“Tç´°èƒžå¤‰åŒ– çµæžœ ===\n")
+  print(stats_3group_df)
+  
+  # æœ‰æ„ãªå¤‰åŒ–ã®è¦ç´„
+  significant_3group <- stats_3group_df[stats_3group_df$p_adj < 0.05 & !is.na(stats_3group_df$p_adj), ]
+  cat("\næœ‰æ„å·®ã®ã‚ã‚‹éºä¼å­æ•°:", nrow(significant_3group), "/", nrow(stats_3group_df), "\n")
+  
+  if(nrow(significant_3group) > 0) {
+    cat("\n3ç¾¤é–“ã§æœ‰æ„ãªå¤‰åŒ–:\n")
+    print(significant_3group[, c("gene", "ici_vs_rejection_fc", "ici_vs_drug_fc", "p_adj")])
+  }
+} else {
+  stats_3group_df <- data.frame()
+}
+```
+
+---
+
+# 6. 3ç¾¤æ¯”è¼ƒå¯è¦–åŒ–ï¼ˆä»£è¡¨éºä¼å­ï¼‰
+
+```{r visualization_prep}
+# 3ç¾¤æ¯”è¼ƒç”¨ã®å¯è¦–åŒ–è¨­å®š
+custom_theme <- theme_minimal() +
+  theme(
+    plot.title = element_text(size = 14, face = "bold"),
+    axis.text = element_text(size = 12),
+    axis.title = element_text(size = 12, face = "bold"),
+    legend.text = element_text(size = 10),
+    legend.title = element_text(size = 12, face = "bold")
+  )
+
+# 3ç¾¤ç”¨ã‚«ãƒ©ãƒ¼ãƒ‘ãƒ¬ãƒƒãƒˆ
+group_colors_3 <- c("ICI_AKI" = "#E31A1C", "Rejection" = "#1F78B4", "Drug_AIN" = "#33A02C")
+```
+
+```{r three_group_boxplots}
+# ä¸»è¦éºä¼å­ã®3ç¾¤æ¯”è¼ƒãƒœãƒƒã‚¯ã‚¹ãƒ—ãƒ­ãƒƒãƒˆ
+key_genes_for_plot <- intersect(c("CD3E", "CD4", "CD8A", "FOXP3", "GZMB", "IFNG", "PDCD1", "LAG3"), available_genes)
+
+if(length(key_genes_for_plot) > 0) {
+  box_plots_3 <- list()
+  
+  for(gene in key_genes_for_plot) {
+    # çµ±è¨ˆçš„æœ‰æ„æ€§ã®ç¢ºèª
+    is_significant <- exists("stats_3group_df") && gene %in% stats_3group_df$gene
+    significance_text <- ""
+    if(is_significant) {
+      gene_stats <- stats_3group_df[stats_3group_df$gene == gene, ]
+      if(nrow(gene_stats) > 0 && !is.na(gene_stats$p_adj)) {
+        if(gene_stats$p_adj < 0.001) significance_text <- "***"
+        else if(gene_stats$p_adj < 0.01) significance_text <- "**"
+        else if(gene_stats$p_adj < 0.05) significance_text <- "*"
+      }
+    }
+    
+    p <- ggplot(combined_data, aes(x = group, y = !!sym(gene), fill = group)) +
+      geom_boxplot(alpha = 0.7, outlier.size = 0.5) +
+      geom_jitter(alpha = 0.3, size = 0.2, width = 0.2) +
+      scale_fill_manual(values = group_colors_3) +
+      labs(
+        title = paste0(gene, " ç™ºç¾é‡ ", significance_text),
+        x = "ã‚°ãƒ«ãƒ¼ãƒ—",
+        y = "ç™ºç¾é‡ (æ­£è¦åŒ–)",
+        subtitle = ifelse(significance_text != "", "3ç¾¤é–“ã§çµ±è¨ˆçš„æœ‰æ„å·®ã‚ã‚Š", "")
+      ) +
+      custom_theme +
+      theme(
+        legend.position = "none",
+        axis.text.x = element_text(angle = 45, hjust = 1)
+      )
+    
+    box_plots_3[[gene]] <- p
+  }
+  
+  # ãƒ—ãƒ­ãƒƒãƒˆã®çµ„ã¿åˆã‚ã›
+  if(length(box_plots_3) > 0) {
+    combined_box_3 <- wrap_plots(box_plots_3, ncol = 3)
+    print(combined_box_3)
+  }
+}
+```
+
+---
+
+# 7. Tç´°èƒžã§ã®å…¨éºä¼å­ç¶²ç¾…çš„3ç¾¤æ¯”è¼ƒè§£æž
+
+```{r tcell_genome_wide_three_group_analysis}
+cat("=== Tç´°èƒž å…¨éºä¼å­ç¶²ç¾…çš„3ç¾¤æ¯”è¼ƒè§£æž ===\n")
+
+# Tç´°èƒžã®å…¨éºä¼å­ãƒªã‚¹ãƒˆå–å¾—
+tcell_all_genes <- rownames(t_cells_all)
+cat("Tç´°èƒž ç·éºä¼å­æ•°:", length(tcell_all_genes), "\n")
+
+# ç™ºç¾ãƒ•ã‚£ãƒ«ã‚¿ãƒªãƒ³ã‚°ï¼ˆåŠ¹çŽ‡åŒ–ã®ãŸã‚ï¼‰
+tcell_expressed_genes <- c()
+
+# ã‚µãƒ³ãƒ—ãƒªãƒ³ã‚°ï¼ˆæœ€å¤§8000éºä¼å­ï¼‰
+sample_tcell_genes <- sample(tcell_all_genes, min(8000, length(tcell_all_genes)))
+
+for(gene in sample_tcell_genes) {
+  tryCatch({
+    gene_expr <- FetchData(t_cells_all, vars = gene, slot = "data")[,1]
+    
+    # 3ç¾¤ã§ã®ç™ºç¾çŽ‡ç¢ºèª
+    ici_cells <- t_cells_all$group == "ICI_AKI"
+    rejection_cells <- t_cells_all$group == "Rejection"
+    drug_cells <- t_cells_all$group == "Drug_AIN"
+    
+    ici_expr_rate <- mean(gene_expr[ici_cells] > 0, na.rm = TRUE)
+    rejection_expr_rate <- mean(gene_expr[rejection_cells] > 0, na.rm = TRUE)
+    drug_expr_rate <- mean(gene_expr[drug_cells] > 0, na.rm = TRUE)
+    
+    # ã„ãšã‚Œã‹ã®ã‚°ãƒ«ãƒ¼ãƒ—ã§10%ä»¥ä¸Šç™ºç¾
+    if(ici_expr_rate > 0.1 || rejection_expr_rate > 0.1 || drug_expr_rate > 0.1) {
+      tcell_expressed_genes <- c(tcell_expressed_genes, gene)
+    }
+  }, error = function(e) {
+    # ã‚¨ãƒ©ãƒ¼ã¯ç„¡è¦–
+  })
+  
+  # é€²æ—è¡¨ç¤º
+  if(length(tcell_expressed_genes) %% 500 == 0) {
+    cat("å‡¦ç†æ¸ˆã¿éºä¼å­æ•°:", length(tcell_expressed_genes), "/", match(gene, sample_tcell_genes), "\n")
+  }
+}
+
+cat("Tç´°èƒž ç™ºç¾ãƒ•ã‚£ãƒ«ã‚¿å¾Œéºä¼å­æ•°:", length(tcell_expressed_genes), "\n")
+```
+
+```{r tcell_genome_wide_statistical_analysis}
+# Tç´°èƒž å…¨éºä¼å­çµ±è¨ˆè§£æž
+cat("Tç´°èƒž å…¨éºä¼å­3ç¾¤æ¯”è¼ƒçµ±è¨ˆè§£æžé–‹å§‹...\n")
+
+# ãƒãƒƒãƒã‚µã‚¤ã‚ºè¨­å®š
+batch_size <- 250
+n_batches <- ceiling(length(tcell_expressed_genes) / batch_size)
+
+tcell_all_gene_results <- list()
+
+for(batch in 1:n_batches) {
+  cat("ãƒãƒƒãƒ", batch, "/", n_batches, "å‡¦ç†ä¸­...\n")
+  
+  # ãƒãƒƒãƒéºä¼å­é¸æŠž
+  start_idx <- (batch - 1) * batch_size + 1
+  end_idx <- min(batch * batch_size, length(tcell_expressed_genes))
+  batch_genes <- tcell_expressed_genes[start_idx:end_idx]
+  
+  # ãƒãƒƒãƒç™ºç¾ãƒ‡ãƒ¼ã‚¿å–å¾—
+  batch_expr <- FetchData(t_cells_all, vars = batch_genes, slot = "data")
+  batch_meta <- t_cells_all@meta.data[, "group", drop = FALSE]
+  batch_combined <- cbind(batch_meta, batch_expr)
+  
+  # ãƒãƒƒãƒå†…çµ±è¨ˆè§£æž
+  for(gene in batch_genes) {
+    tryCatch({
+      ici_expr <- batch_combined[batch_combined$group == "ICI_AKI", gene]
+      rejection_expr <- batch_combined[batch_combined$group == "Rejection", gene]
+      drug_expr <- batch_combined[batch_combined$group == "Drug_AIN", gene]
+      
+      ici_clean <- ici_expr[!is.na(ici_expr)]
+      rejection_clean <- rejection_expr[!is.na(rejection_expr)]
+      drug_clean <- drug_expr[!is.na(drug_expr)]
+      
+      if(length(ici_clean) > 15 && length(rejection_clean) > 15 && length(drug_clean) > 15) {
+        if(var(ici_clean) > 0 || var(rejection_clean) > 0 || var(drug_clean) > 0) {
+          kruskal_result <- kruskal.test(list(ici_clean, rejection_clean, drug_clean))
+          
+          ici_mean <- mean(ici_clean)
+          rejection_mean <- mean(rejection_clean)
+          drug_mean <- mean(drug_clean)
+          
+          tcell_all_gene_results[[gene]] <- data.frame(
+            gene = gene,
+            ici_mean = ici_mean,
+            rejection_mean = rejection_mean,
+            drug_mean = drug_mean,
+            ici_vs_rejection_fc = ifelse(rejection_mean > 0, ici_mean / rejection_mean, NA),
+            ici_vs_drug_fc = ifelse(drug_mean > 0, ici_mean / drug_mean, NA),
+            ici_vs_rejection_log2fc = ifelse(rejection_mean > 0, log2(ici_mean / rejection_mean), NA),
+            ici_vs_drug_log2fc = ifelse(drug_mean > 0, log2(ici_mean / drug_mean), NA),
+            p_value = kruskal_result$p.value,
+            ici_expr_pct = mean(ici_clean > 0) * 100,
+            rejection_expr_pct = mean(rejection_clean > 0) * 100,
+            drug_expr_pct = mean(drug_clean > 0) * 100,
+            stringsAsFactors = FALSE
+          )
+        }
+      }
+    }, error = function(e) {
+      # ã‚¨ãƒ©ãƒ¼ã¯ç„¡è¦–ã—ã¦ç¶šè¡Œ
+    })
+  }
+}
+
+# çµæžœçµ±åˆ
+if(length(tcell_all_gene_results) > 0) {
+  tcell_genome_wide_stats <- do.call(rbind, tcell_all_gene_results)
+  tcell_genome_wide_stats$p_adj <- p.adjust(tcell_genome_wide_stats$p_value, method = "BH")
+  tcell_genome_wide_stats <- tcell_genome_wide_stats[order(tcell_genome_wide_stats$p_value), ]
+  
+  cat("=== Tç´°èƒž å…¨éºä¼å­3ç¾¤æ¯”è¼ƒè§£æžå®Œäº† ===\n")
+  cat("è§£æžå®Œäº†éºä¼å­æ•°:", nrow(tcell_genome_wide_stats), "\n")
+  cat("æœ‰æ„å·®éºä¼å­æ•°(FDR<0.05):", sum(tcell_genome_wide_stats$p_adj < 0.05, na.rm = TRUE), "\n")
+  cat("æœ‰æ„å·®éºä¼å­æ•°(FDR<0.01):", sum(tcell_genome_wide_stats$p_adj < 0.01, na.rm = TRUE), "\n")
+  
+  # ãƒˆãƒƒãƒ—çµæžœè¡¨ç¤º
+  cat("\næœ€ã‚‚æœ‰æ„ãªéºä¼å­ï¼ˆä¸Šä½20ï¼‰:\n")
+  print(head(tcell_genome_wide_stats[, c("gene", "ici_vs_rejection_fc", "ici_vs_drug_fc", "p_value", "p_adj")], 20))
+  
+  # Tç´°èƒžã§ã®ICIç‰¹ç•°çš„å¤‰åŒ–
+  tcell_ici_specific_genome <- tcell_genome_wide_stats[
+    tcell_genome_wide_stats$p_adj < 0.05 & 
+    !is.na(tcell_genome_wide_stats$ici_vs_rejection_fc) &
+    !is.na(tcell_genome_wide_stats$ici_vs_drug_fc) &
+    ((tcell_genome_wide_stats$ici_vs_rejection_fc > 2 | tcell_genome_wide_stats$ici_vs_rejection_fc < 0.5) &
+     (tcell_genome_wide_stats$ici_vs_drug_fc > 2 | tcell_genome_wide_stats$ici_vs_drug_fc < 0.5)),
+  ]
+  
+  if(nrow(tcell_ici_specific_genome) > 0) {
+    cat("\nTç´°èƒžã§ã®å¼·ã„ICIç‰¹ç•°çš„å¤‰åŒ–ï¼ˆFC>2 or FC<0.5ï¼‰:\n")
+    print(tcell_ici_specific_genome[, c("gene", "ici_vs_rejection_fc", "ici_vs_drug_fc", "p_adj")])
+  }
+  
+} else {
+  cat("Tç´°èƒžå…¨éºä¼å­è§£æžçµæžœãŒã‚ã‚Šã¾ã›ã‚“\n")
+}
+```
+
+```{r tcell_genome_wide_visualization}
+# Tç´°èƒž å…¨éºä¼å­çµæžœã®å¯è¦–åŒ–ï¼ˆå®Œå…¨ç‰ˆï¼‰
+if(exists("tcell_genome_wide_stats") && nrow(tcell_genome_wide_stats) > 0) {
+  
+  # Tç´°èƒž ICI vs Rejection ãƒœãƒ«ã‚±ãƒ¼ãƒŽãƒ—ãƒ­ãƒƒãƒˆ
+  tcell_volcano_data <- tcell_genome_wide_stats[
+    !is.na(tcell_genome_wide_stats$ici_vs_rejection_log2fc) & 
+    !is.na(tcell_genome_wide_stats$p_value) &
+    is.finite(tcell_genome_wide_stats$ici_vs_rejection_log2fc),
+  ]
+  
+  if(nrow(tcell_volcano_data) > 0) {
+    tcell_volcano_data$significance <- case_when(
+      tcell_volcano_data$p_adj < 0.001 ~ "FDR < 0.001",
+      tcell_volcano_data$p_adj < 0.01 ~ "FDR < 0.01", 
+      tcell_volcano_data$p_adj < 0.05 ~ "FDR < 0.05",
+      TRUE ~ "ns"
+    )
+    
+    tcell_volcano_data$label <- ifelse(
+      tcell_volcano_data$p_adj < 0.001 & 
+      abs(tcell_volcano_data$ici_vs_rejection_log2fc) > 1, 
+      tcell_volcano_data$gene, ""
+    )
+    
+    p_tcell_volcano_rej <- ggplot(tcell_volcano_data, aes(x = ici_vs_rejection_log2fc, y = -log10(p_value))) +
+      geom_point(aes(color = significance), size = 1, alpha = 0.6) +
+      geom_text_repel(
+        aes(label = label), 
+        size = 2, 
+        max.overlaps = 20
+      ) +
+      scale_color_manual(
+        values = c("FDR < 0.001" = "#d73027", "FDR < 0.01" = "#f46d43", 
+                  "FDR < 0.05" = "#fdae61", "ns" = "gray80")
+      ) +
+      geom_vline(xintercept = c(-1, 1), linetype = "dashed", alpha = 0.5) +
+      geom_hline(yintercept = -log10(0.05), linetype = "dashed", alpha = 0.5) +
+      labs(
+        title = "Tç´°èƒž å…¨éºä¼å­ ICI-AKI vs Rejection",
+        subtitle = paste("è§£æžéºä¼å­æ•°:", nrow(tcell_volcano_data)),
+        x = "Log2 Fold Change (ICI-AKI / Rejection)",
+        y = "-Log10 P-value",
+        color = "æœ‰æ„æ€§"
+      ) +
+      theme_minimal()
+    
+    print(p_tcell_volcano_rej)
+  }
+  
+  # ã€NEWã€‘Tç´°èƒž ICI vs Drug-AIN ãƒœãƒ«ã‚±ãƒ¼ãƒŽãƒ—ãƒ­ãƒƒãƒˆ
+  tcell_volcano_drug_data <- tcell_genome_wide_stats[
+    !is.na(tcell_genome_wide_stats$ici_vs_drug_log2fc) & 
+    !is.na(tcell_genome_wide_stats$p_value) &
+    is.finite(tcell_genome_wide_stats$ici_vs_drug_log2fc),
+  ]
+  
+  if(nrow(tcell_volcano_drug_data) > 0) {
+    tcell_volcano_drug_data$significance <- case_when(
+      tcell_volcano_drug_data$p_adj < 0.001 ~ "FDR < 0.001",
+      tcell_volcano_drug_data$p_adj < 0.01 ~ "FDR < 0.01", 
+      tcell_volcano_drug_data$p_adj < 0.05 ~ "FDR < 0.05",
+      TRUE ~ "ns"
+    )
+    
+    tcell_volcano_drug_data$label <- ifelse(
+      tcell_volcano_drug_data$p_adj < 0.001 & 
+      abs(tcell_volcano_drug_data$ici_vs_drug_log2fc) > 1, 
+      tcell_volcano_drug_data$gene, ""
+    )
+    
+    p_tcell_volcano_drug <- ggplot(tcell_volcano_drug_data, aes(x = ici_vs_drug_log2fc, y = -log10(p_value))) +
+      geom_point(aes(color = significance), size = 1, alpha = 0.6) +
+      geom_text_repel(
+        aes(label = label), 
+        size = 2, 
+        max.overlaps = 20
+      ) +
+      scale_color_manual(
+        values = c("FDR < 0.001" = "#d73027", "FDR < 0.01" = "#f46d43", 
+                  "FDR < 0.05" = "#fdae61", "ns" = "gray80")
+      ) +
+      geom_vline(xintercept = c(-1, 1), linetype = "dashed", alpha = 0.5) +
+      geom_hline(yintercept = -log10(0.05), linetype = "dashed", alpha = 0.5) +
+      labs(
+        title = "Tç´°èƒž å…¨éºä¼å­ ICI-AKI vs Drug-AIN",
+        subtitle = paste("è§£æžéºä¼å­æ•°:", nrow(tcell_volcano_drug_data)),
+        x = "Log2 Fold Change (ICI-AKI / Drug-AIN)",
+        y = "-Log10 P-value",
+        color = "æœ‰æ„æ€§"
+      ) +
+      theme_minimal()
+    
+    print(p_tcell_volcano_drug)
+  }
+  
+  # Tç´°èƒž ãƒˆãƒƒãƒ—éºä¼å­ã®ãƒ’ãƒ¼ãƒˆãƒžãƒƒãƒ—ï¼ˆä¿®æ­£ç‰ˆï¼‰
+  tcell_top_genes <- head(tcell_genome_wide_stats[tcell_genome_wide_stats$p_adj < 0.05, ], 30)
+  
+  if(nrow(tcell_top_genes) > 0) {
+    tcell_top_gene_list <- tcell_top_genes$gene
+    
+    # t_cells_allã‚ªãƒ–ã‚¸ã‚§ã‚¯ãƒˆã‹ã‚‰ç›´æŽ¥ç™ºç¾ãƒ‡ãƒ¼ã‚¿ã‚’å–å¾—
+    tcell_top_expression <- FetchData(t_cells_all, vars = tcell_top_gene_list, slot = "data")
+    tcell_top_meta <- t_cells_all@meta.data[, "group", drop = FALSE]
+    tcell_top_combined <- cbind(tcell_top_meta, tcell_top_expression)
+    
+    tcell_top_heatmap_data <- tcell_top_combined %>%
+      group_by(group) %>%
+      summarise(across(all_of(tcell_top_gene_list), mean, na.rm = TRUE), .groups = "drop")
+    
+    if(ncol(tcell_top_heatmap_data) > 2) {
+      tcell_top_heatmap_matrix <- as.matrix(tcell_top_heatmap_data[, -1])
+      rownames(tcell_top_heatmap_matrix) <- tcell_top_heatmap_data$group
+      
+      pheatmap(
+        t(tcell_top_heatmap_matrix),
+        cluster_rows = TRUE,
+        cluster_cols = FALSE,
+        scale = "row",
+        color = colorRampPalette(c("blue", "white", "red"))(50),
+        main = paste("Tç´°èƒž å…¨éºä¼å­3ç¾¤æ¯”è¼ƒ ãƒˆãƒƒãƒ—", nrow(tcell_top_genes), "éºä¼å­"),
+        fontsize_row = 3,
+        cellwidth = 60,
+        cellheight = 6
+      )
+    }
+  }
+}
+```
+
+---
+
+# 8. CD45é™½æ€§ç´°èƒžã§ã®3ç¾¤æ¯”è¼ƒè§£æžï¼ˆä»£è¡¨éºä¼å­ï¼‰
+
+```{r cd45_three_group_analysis}
+# CD45é™½æ€§ç´°èƒžã‚’ä½¿ç”¨ã—ãŸ3ç¾¤æ¯”è¼ƒè§£æž
+cat("=== CD45é™½æ€§ç´°èƒžã§ã®3ç¾¤æ¯”è¼ƒè§£æž ===\n")
+
+# å…ç–«ç´°èƒžã®ã¿ã«é™å®šã—ã¦CD45é™½æ€§ç´°èƒžã‚’æŠ½å‡º
+immune_cell_types <- c("T_cell_mixed", "T_cell_activated", "NK_T_cell", "NK_cell", 
+                       "B_cell", "Plasma_cell", "Macrophage", "Dendritic_cell", 
+                       "Dendritic_cell_CLEC9A", "Dendritic_cell_minor")
+
+cd45_positive <- subset(scffpe_obj, subset = detailed_celltype %in% immune_cell_types & CD45_status == "CD45+")
+
+# 3ç¾¤æ¯”è¼ƒç”¨ãƒ‡ãƒ¼ã‚¿æº–å‚™
+cd45_positive$group <- case_when(
+  cd45_positive$orig.ident %in% c("S1_scFFPE", "S3_scFFPE") ~ "ICI_AKI",
+  cd45_positive$orig.ident == "S0_scFFPE" ~ "Rejection", 
+  cd45_positive$orig.ident == "S2_scFFPE" ~ "Drug_AIN"
+)
+
+cat("CD45é™½æ€§ç´°èƒžãƒ‡ãƒ¼ã‚¿:\n")
+print(paste("ç·ç´°èƒžæ•°:", ncol(cd45_positive)))
+print("3ç¾¤åˆ¥ç´°èƒžæ•°:")
+print(table(cd45_positive$group))
+
+# è©³ç´°ç´°èƒžã‚¿ã‚¤ãƒ—åˆ†å¸ƒã®ç¢ºèª
+if("detailed_celltype" %in% colnames(cd45_positive@meta.data)) {
+  print("è©³ç´°ç´°èƒžã‚¿ã‚¤ãƒ— Ã— 3ç¾¤åˆ†å¸ƒ:")
+  print(table(cd45_positive$detailed_celltype, cd45_positive$group))
+}
+
+# CD45é™½æ€§ç´°èƒžç”¨ã®ä»£è¡¨éºä¼å­ã‚»ãƒƒãƒˆ
+cd45_genes <- c(
+  # Tç´°èƒžãƒžãƒ¼ã‚«ãƒ¼
+  "CD3E", "CD4", "CD8A", "FOXP3", "GZMB", "PRF1", "IFNG", "PDCD1", "LAG3", "TIGIT",
+  # Bç´°èƒžãƒžãƒ¼ã‚«ãƒ¼  
+  "CD19", "CD79A", "MS4A1", "IGHM", "IGHG1", "JCHAIN",
+  # NKç´°èƒžãƒžãƒ¼ã‚«ãƒ¼
+  "KLRD1", "NKG7", "NCAM1", "KLRB1",
+  # ãƒžã‚¯ãƒ­ãƒ•ã‚¡ãƒ¼ã‚¸/å˜çƒãƒžãƒ¼ã‚«ãƒ¼
+  "CD68", "CD14", "FCGR3A", "CSF1R", "CD163", "ARG1", "NOS2", "IL1B",
+  # æ¨¹çŠ¶ç´°èƒžãƒžãƒ¼ã‚«ãƒ¼
+  "CLEC9A", "BATF3", "IRF8", "FCER1A",
+  # ç‚Žç—‡ãƒ»ã‚µã‚¤ãƒˆã‚«ã‚¤ãƒ³ãƒžãƒ¼ã‚«ãƒ¼
+  "TNF", "IL6", "IL10", "IL17A", "CXCL10", "CCL2", "CCL5",
+  # æ´»æ€§åŒ–ãƒ»æž¯æ¸‡ãƒžãƒ¼ã‚«ãƒ¼
+  "CD69", "CD25", "TIM3", "CD274", "CTLA4"
+)
+
+# åˆ©ç”¨å¯èƒ½éºä¼å­ã®ç¢ºèª
+available_cd45_genes <- cd45_genes[cd45_genes %in% rownames(cd45_positive)]
+cat("åˆ©ç”¨å¯èƒ½ãªCD45ç´°èƒžéºä¼å­:", length(available_cd45_genes), "/", length(cd45_genes), "\n")
+print(available_cd45_genes)
+```
+
+```{r cd45_three_group_statistical_analysis}
+# CD45é™½æ€§ç´°èƒž3ç¾¤æ¯”è¼ƒçµ±è¨ˆè§£æžï¼ˆä»£è¡¨éºä¼å­ï¼‰
+cd45_expression <- FetchData(
+  cd45_positive, 
+  vars = available_cd45_genes,
+  slot = "data"
+)
+
+cd45_meta <- cd45_positive@meta.data[, c("orig.ident", "group")]
+if("detailed_celltype" %in% colnames(cd45_positive@meta.data)) {
+  cd45_meta$celltype <- cd45_positive@meta.data$detailed_celltype
+}
+
+combined_cd45_data <- cbind(cd45_meta, cd45_expression)
+
+# 3ç¾¤æ¯”è¼ƒçµ±è¨ˆè§£æž
+cd45_kruskal_results <- list()
+
+cat("CD45é™½æ€§ç´°èƒž3ç¾¤æ¯”è¼ƒçµ±è¨ˆè§£æžå®Ÿè¡Œä¸­...\n")
+
+for(gene in available_cd45_genes) {
+  ici_expr <- combined_cd45_data[combined_cd45_data$group == "ICI_AKI", gene]
+  rejection_expr <- combined_cd45_data[combined_cd45_data$group == "Rejection", gene]
+  drug_expr <- combined_cd45_data[combined_cd45_data$group == "Drug_AIN", gene]
+  
+  ici_clean <- ici_expr[!is.na(ici_expr)]
+  rejection_clean <- rejection_expr[!is.na(rejection_expr)]
+  drug_clean <- drug_expr[!is.na(drug_expr)]
+  
+  if(length(ici_clean) > 20 && length(rejection_clean) > 20 && length(drug_clean) > 20) {
+    if(var(ici_clean) > 0 || var(rejection_clean) > 0 || var(drug_clean) > 0) {
+      kruskal_result <- kruskal.test(list(ici_clean, rejection_clean, drug_clean))
+      
+      ici_mean <- mean(ici_clean)
+      rejection_mean <- mean(rejection_clean)
+      drug_mean <- mean(drug_clean)
+      
+      cd45_kruskal_results[[gene]] <- data.frame(
+        gene = gene,
+        ici_mean = ici_mean,
+        rejection_mean = rejection_mean,
+        drug_mean = drug_mean,
+        ici_vs_rejection_fc = ifelse(rejection_mean > 0, ici_mean / rejection_mean, NA),
+        ici_vs_drug_fc = ifelse(drug_mean > 0, ici_mean / drug_mean, NA),
+        p_value = kruskal_result$p.value,
+        ici_expr_pct = mean(ici_clean > 0) * 100,
+        rejection_expr_pct = mean(rejection_clean > 0) * 100,
+        drug_expr_pct = mean(drug_clean > 0) * 100,
+        stringsAsFactors = FALSE
+      )
+    }
+  }
+}
+
+# çµæžœå‡¦ç†
+if(length(cd45_kruskal_results) > 0) {
+  cd45_stats_3group_df <- do.call(rbind, cd45_kruskal_results)
+  cd45_stats_3group_df$p_adj <- p.adjust(cd45_stats_3group_df$p_value, method = "BH")
+  cd45_stats_3group_df <- cd45_stats_3group_df[order(cd45_stats_3group_df$p_value), ]
+  
+  cat("=== CD45é™½æ€§ç´°èƒž 3ç¾¤æ¯”è¼ƒçµæžœï¼ˆä»£è¡¨éºä¼å­ï¼‰ ===\n")
+  print(cd45_stats_3group_df)
+  
+  # æœ‰æ„ãªå¤‰åŒ–
+  cd45_significant_3group <- cd45_stats_3group_df[cd45_stats_3group_df$p_adj < 0.05 & !is.na(cd45_stats_3group_df$p_adj), ]
+  cat("\næœ‰æ„å·®éºä¼å­æ•°:", nrow(cd45_significant_3group), "/", nrow(cd45_stats_3group_df), "\n")
+  
+  if(nrow(cd45_significant_3group) > 0) {
+    print("æœ‰æ„ãªå¤‰åŒ–:")
+    print(cd45_significant_3group[, c("gene", "ici_vs_rejection_fc", "ici_vs_drug_fc", "p_adj")])
+  }
+}
+```
+
+---
+
+# 9. CD45é™½æ€§ç´°èƒžã§ã®å…¨éºä¼å­ç¶²ç¾…çš„3ç¾¤æ¯”è¼ƒè§£æž
+
+```{r cd45_genome_wide_three_group_analysis}
+cat("=== CD45é™½æ€§ç´°èƒž å…¨éºä¼å­ç¶²ç¾…çš„3ç¾¤æ¯”è¼ƒè§£æž ===\n")
+
+# CD45é™½æ€§ç´°èƒžã®å…¨éºä¼å­ãƒªã‚¹ãƒˆå–å¾—
+cd45_all_genes <- rownames(cd45_positive)
+cat("CD45é™½æ€§ç´°èƒž ç·éºä¼å­æ•°:", length(cd45_all_genes), "\n")
+
+# CD45é™½æ€§ç´°èƒžç”¨ã®ç™ºç¾ãƒ•ã‚£ãƒ«ã‚¿ãƒªãƒ³ã‚°
+cd45_expressed_genes <- c()
+
+# ã‚ˆã‚ŠåŠ¹çŽ‡çš„ãªç™ºç¾ãƒ•ã‚£ãƒ«ã‚¿ãƒªãƒ³ã‚°ï¼ˆã‚µãƒ³ãƒ—ãƒªãƒ³ã‚°ï¼‰
+sample_cd45_genes <- sample(cd45_all_genes, min(10000, length(cd45_all_genes)))  # æœ€å¤§1ä¸‡éºä¼å­
+
+for(gene in sample_cd45_genes) {
+  tryCatch({
+    gene_expr <- FetchData(cd45_positive, vars = gene, slot = "data")[,1]
+    
+    # 3ç¾¤åˆ¥ç™ºç¾çŽ‡
+    ici_cells <- cd45_positive$group == "ICI_AKI"
+    rejection_cells <- cd45_positive$group == "Rejection"
+    drug_cells <- cd45_positive$group == "Drug_AIN"
+    
+    ici_expr_rate <- mean(gene_expr[ici_cells] > 0, na.rm = TRUE)
+    rejection_expr_rate <- mean(gene_expr[rejection_cells] > 0, na.rm = TRUE)
+    drug_expr_rate <- mean(gene_expr[drug_cells] > 0, na.rm = TRUE)
+    
+    # ã„ãšã‚Œã‹ã®ã‚°ãƒ«ãƒ¼ãƒ—ã§10%ä»¥ä¸Šç™ºç¾
+    if(ici_expr_rate > 0.1 || rejection_expr_rate > 0.1 || drug_expr_rate > 0.1) {
+      cd45_expressed_genes <- c(cd45_expressed_genes, gene)
+    }
+  }, error = function(e) {
+    # ã‚¨ãƒ©ãƒ¼ã¯ç„¡è¦–
+  })
+  
+  # é€²æ—è¡¨ç¤º
+  if(length(cd45_expressed_genes) %% 500 == 0) {
+    cat("å‡¦ç†æ¸ˆã¿éºä¼å­æ•°:", length(cd45_expressed_genes), "/", match(gene, sample_cd45_genes), "\n")
+  }
+}
+
+cat("CD45é™½æ€§ç´°èƒž ç™ºç¾ãƒ•ã‚£ãƒ«ã‚¿å¾Œéºä¼å­æ•°:", length(cd45_expressed_genes), "\n")
+```
+
+```{r cd45_genome_wide_statistical_analysis}
+# CD45é™½æ€§ç´°èƒž å…¨éºä¼å­çµ±è¨ˆè§£æž
+cat("CD45é™½æ€§ç´°èƒž å…¨éºä¼å­3ç¾¤æ¯”è¼ƒçµ±è¨ˆè§£æžé–‹å§‹...\n")
+
+# ãƒãƒƒãƒã‚µã‚¤ã‚ºè¨­å®š
+batch_size <- 300
+n_batches <- ceiling(length(cd45_expressed_genes) / batch_size)
+
+cd45_all_gene_results <- list()
+
+for(batch in 1:n_batches) {
+  cat("ãƒãƒƒãƒ", batch, "/", n_batches, "å‡¦ç†ä¸­...\n")
+  
+  # ãƒãƒƒãƒéºä¼å­é¸æŠž
+  start_idx <- (batch - 1) * batch_size + 1
+  end_idx <- min(batch * batch_size, length(cd45_expressed_genes))
+  batch_genes <- cd45_expressed_genes[start_idx:end_idx]
+  
+  # ãƒãƒƒãƒç™ºç¾ãƒ‡ãƒ¼ã‚¿å–å¾—
+  batch_expr <- FetchData(cd45_positive, vars = batch_genes, slot = "data")
+  batch_meta <- cd45_positive@meta.data[, "group", drop = FALSE]
+  batch_combined <- cbind(batch_meta, batch_expr)
+  
+  # ãƒãƒƒãƒå†…çµ±è¨ˆè§£æž
+  for(gene in batch_genes) {
+    tryCatch({
+      ici_expr <- batch_combined[batch_combined$group == "ICI_AKI", gene]
+      rejection_expr <- batch_combined[batch_combined$group == "Rejection", gene]
+      drug_expr <- batch_combined[batch_combined$group == "Drug_AIN", gene]
+      
+      ici_clean <- ici_expr[!is.na(ici_expr)]
+      rejection_clean <- rejection_expr[!is.na(rejection_expr)]
+      drug_clean <- drug_expr[!is.na(drug_expr)]
+      
+      if(length(ici_clean) > 20 && length(rejection_clean) > 20 && length(drug_clean) > 20) {
+        if(var(ici_clean) > 0 || var(rejection_clean) > 0 || var(drug_clean) > 0) {
+          kruskal_result <- kruskal.test(list(ici_clean, rejection_clean, drug_clean))
+          
+          ici_mean <- mean(ici_clean)
+          rejection_mean <- mean(rejection_clean)
+          drug_mean <- mean(drug_mean)
+          
+          cd45_all_gene_results[[gene]] <- data.frame(
+            gene = gene,
+            ici_mean = ici_mean,
+            rejection_mean = rejection_mean,
+            drug_mean = drug_mean,
+            ici_vs_rejection_fc = ifelse(rejection_mean > 0, ici_mean / rejection_mean, NA),
+            ici_vs_drug_fc = ifelse(drug_mean > 0, ici_mean / drug_mean, NA),
+            ici_vs_rejection_log2fc = ifelse(rejection_mean > 0, log2(ici_mean / rejection_mean), NA),
+            ici_vs_drug_log2fc = ifelse(drug_mean > 0, log2(ici_mean / drug_mean), NA),
+            p_value = kruskal_result$p.value,
+            ici_expr_pct = mean(ici_clean > 0) * 100,
+            rejection_expr_pct = mean(rejection_clean > 0) * 100,
+            drug_expr_pct = mean(drug_clean > 0) * 100,
+            stringsAsFactors = FALSE
+          )
+        }
+      }
+    }, error = function(e) {
+      # ã‚¨ãƒ©ãƒ¼ã¯ç„¡è¦–ã—ã¦ç¶šè¡Œ
+    })
+  }
+}
+
+# çµæžœçµ±åˆ
+if(length(cd45_all_gene_results) > 0) {
+  cd45_genome_wide_stats <- do.call(rbind, cd45_all_gene_results)
+  cd45_genome_wide_stats$p_adj <- p.adjust(cd45_genome_wide_stats$p_value, method = "BH")
+  cd45_genome_wide_stats <- cd45_genome_wide_stats[order(cd45_genome_wide_stats$p_value), ]
+  
+  cat("=== CD45é™½æ€§ç´°èƒž å…¨éºä¼å­3ç¾¤æ¯”è¼ƒè§£æžå®Œäº† ===\n")
+  cat("è§£æžå®Œäº†éºä¼å­æ•°:", nrow(cd45_genome_wide_stats), "\n")
+  cat("æœ‰æ„å·®éºä¼å­æ•°(FDR<0.05):", sum(cd45_genome_wide_stats$p_adj < 0.05, na.rm = TRUE), "\n")
+  cat("æœ‰æ„å·®éºä¼å­æ•°(FDR<0.01):", sum(cd45_genome_wide_stats$p_adj < 0.01, na.rm = TRUE), "\n")
+  
+  # ãƒˆãƒƒãƒ—çµæžœè¡¨ç¤º
+  cat("\næœ€ã‚‚æœ‰æ„ãªéºä¼å­ï¼ˆä¸Šä½20ï¼‰:\n")
+  print(head(cd45_genome_wide_stats[, c("gene", "ici_vs_rejection_fc", "ici_vs_drug_fc", "p_value", "p_adj")], 20))
+  
+  # CD45é™½æ€§ç´°èƒžã§ã®ICIç‰¹ç•°çš„å¤‰åŒ–
+  cd45_ici_specific_genome <- cd45_genome_wide_stats[
+    cd45_genome_wide_stats$p_adj < 0.05 & 
+    !is.na(cd45_genome_wide_stats$ici_vs_rejection_fc) &
+    !is.na(cd45_genome_wide_stats$ici_vs_drug_fc) &
+    ((cd45_genome_wide_stats$ici_vs_rejection_fc > 2 | cd45_genome_wide_stats$ici_vs_rejection_fc < 0.5) &
+     (cd45_genome_wide_stats$ici_vs_drug_fc > 2 | cd45_genome_wide_stats$ici_vs_drug_fc < 0.5)),
+  ]
+  
+  if(nrow(cd45_ici_specific_genome) > 0) {
+    cat("\nCD45é™½æ€§ç´°èƒžã§ã®å¼·ã„ICIç‰¹ç•°çš„å¤‰åŒ–ï¼ˆFC>2 or FC<0.5ï¼‰:\n")
+    print(cd45_ici_specific_genome[, c("gene", "ici_vs_rejection_fc", "ici_vs_drug_fc", "p_adj")])
+  }
+  
+} else {
+  cat("CD45é™½æ€§ç´°èƒžå…¨éºä¼å­è§£æžçµæžœãŒã‚ã‚Šã¾ã›ã‚“\n")
+}
+
+  # 1. å…¨éºä¼å­è§£æžçµæžœã‚’CSVå‡ºåŠ›
+  write.csv(cd45_genome_wide_stats, 
+           file = "CD45_genome_wide_3group_results.csv", 
+           row.names = FALSE)
+  cat("å…¨éºä¼å­è§£æžçµæžœã‚’CSVã§ä¿å­˜: CD45_genome_wide_3group_results.csv\n")
+  
+  # 2. ä¸Šä½20éºä¼å­ã®ã¿CSVå‡ºåŠ›
+  top20_results <- head(cd45_genome_wide_stats[, c("gene", "ici_vs_rejection_fc", "ici_vs_drug_fc", "p_value", "p_adj")], 20)
+  write.csv(top20_results, 
+           file = "CD45_top20_significant_genes.csv", 
+           row.names = FALSE)
+  cat("ä¸Šä½20éºä¼å­ã‚’CSVã§ä¿å­˜: CD45_top20_significant_genes.csv\n")
+  
+  # 3. ICIç‰¹ç•°çš„å¤‰åŒ–éºä¼å­ã‚’CSVå‡ºåŠ›
+  if(nrow(cd45_ici_specific_genome) > 0) {
+    write.csv(cd45_ici_specific_genome[, c("gene", "ici_vs_rejection_fc", "ici_vs_drug_fc", "p_adj")], 
+             file = "CD45_ICI_specific_genes.csv", 
+             row.names = FALSE)
+    cat("ICIç‰¹ç•°çš„å¤‰åŒ–éºä¼å­ã‚’CSVã§ä¿å­˜: CD45_ICI_specific_genes.csv\n")
+  }
+```
+
+```{r cd45_genome_wide_visualization}
+# CD45é™½æ€§ç´°èƒž å…¨éºä¼å­çµæžœã®å¯è¦–åŒ–ï¼ˆå®Œå…¨ç‰ˆï¼‰
+if(exists("cd45_genome_wide_stats") && nrow(cd45_genome_wide_stats) > 0) {
+  
+  # CD45é™½æ€§ç´°èƒž ICI vs Rejection ãƒœãƒ«ã‚±ãƒ¼ãƒŽãƒ—ãƒ­ãƒƒãƒˆ
+  cd45_volcano_data <- cd45_genome_wide_stats[
+    !is.na(cd45_genome_wide_stats$ici_vs_rejection_log2fc) & 
+    !is.na(cd45_genome_wide_stats$p_value) &
+    is.finite(cd45_genome_wide_stats$ici_vs_rejection_log2fc),
+  ]
+  
+  if(nrow(cd45_volcano_data) > 0) {
+    cd45_volcano_data$significance <- case_when(
+      cd45_volcano_data$p_adj < 0.001 ~ "FDR < 0.001",
+      cd45_volcano_data$p_adj < 0.01 ~ "FDR < 0.01", 
+      cd45_volcano_data$p_adj < 0.05 ~ "FDR < 0.05",
+      TRUE ~ "ns"
+    )
+    
+    cd45_volcano_data$label <- ifelse(
+      cd45_volcano_data$p_adj < 0.001 & 
+      abs(cd45_volcano_data$ici_vs_rejection_log2fc) > 1.5, 
+      cd45_volcano_data$gene, ""
+    )
+    
+    p_cd45_volcano_rej <- ggplot(cd45_volcano_data, aes(x = ici_vs_rejection_log2fc, y = -log10(p_value))) +
+      geom_point(aes(color = significance), size = 1, alpha = 0.6) +
+      geom_text_repel(
+        aes(label = label), 
+        size = 2, 
+        max.overlaps = 15
+      ) +
+      scale_color_manual(
+        values = c("FDR < 0.001" = "#d73027", "FDR < 0.01" = "#f46d43", 
+                  "FDR < 0.05" = "#fdae61", "ns" = "gray80")
+      ) +
+      scale_y_continuous(expand = expansion(mult = c(0.02, 0.15))) +
+      geom_vline(xintercept = c(-1, 1), linetype = "dashed", alpha = 0.5) +
+      geom_hline(yintercept = -log10(0.05), linetype = "dashed", alpha = 0.5) +
+      labs(
+        title = "CD45é™½æ€§ç´°èƒž å…¨éºä¼å­ ICI-AKI vs Rejection",
+        subtitle = paste("è§£æžéºä¼å­æ•°:", nrow(cd45_volcano_data)),
+        x = "Log2 Fold Change (ICI-AKI / Rejection)",
+        y = "-Log10 P-value",
+        color = "æœ‰æ„æ€§"
+      ) +
+      theme_minimal()
+    
+    print(p_cd45_volcano_rej)
+  }
+  
+  # ã€NEWã€‘CD45é™½æ€§ç´°èƒž ICI vs Drug-AIN ãƒœãƒ«ã‚±ãƒ¼ãƒŽãƒ—ãƒ­ãƒƒãƒˆ
+  cd45_volcano_drug_data <- cd45_genome_wide_stats[
+    !is.na(cd45_genome_wide_stats$ici_vs_drug_log2fc) & 
+    !is.na(cd45_genome_wide_stats$p_value) &
+    is.finite(cd45_genome_wide_stats$ici_vs_drug_log2fc),
+  ]
+  
+  if(nrow(cd45_volcano_drug_data) > 0) {
+    cd45_volcano_drug_data$significance <- case_when(
+      cd45_volcano_drug_data$p_adj < 0.001 ~ "FDR < 0.001",
+      cd45_volcano_drug_data$p_adj < 0.01 ~ "FDR < 0.01", 
+      cd45_volcano_drug_data$p_adj < 0.05 ~ "FDR < 0.05",
+      TRUE ~ "ns"
+    )
+    
+    cd45_volcano_drug_data$label <- ifelse(
+      cd45_volcano_drug_data$p_adj < 0.001 & 
+      abs(cd45_volcano_drug_data$ici_vs_drug_log2fc) > 1.5, 
+      cd45_volcano_drug_data$gene, ""
+    )
+    
+    p_cd45_volcano_drug <- ggplot(cd45_volcano_drug_data, aes(x = ici_vs_drug_log2fc, y = -log10(p_value))) +
+      geom_point(aes(color = significance), size = 1, alpha = 0.6) +
+      geom_text_repel(
+        aes(label = label), 
+        size = 2, 
+        max.overlaps = 15
+      ) +
+      scale_color_manual(
+        values = c("FDR < 0.001" = "#d73027", "FDR < 0.01" = "#f46d43", 
+                  "FDR < 0.05" = "#fdae61", "ns" = "gray80")
+      ) +
+      scale_y_continuous(expand = expansion(mult = c(0.02, 0.15))) +
+      geom_vline(xintercept = c(-1, 1), linetype = "dashed", alpha = 0.5) +
+      geom_hline(yintercept = -log10(0.05), linetype = "dashed", alpha = 0.5) +
+      labs(
+        title = "CD45é™½æ€§ç´°èƒž å…¨éºä¼å­ ICI-AKI vs Drug-AIN",
+        subtitle = paste("è§£æžéºä¼å­æ•°:", nrow(cd45_volcano_drug_data)),
+        x = "Log2 Fold Change (ICI-AKI / Drug-AIN)",
+        y = "-Log10 P-value",
+        color = "æœ‰æ„æ€§"
+      ) +
+      theme_minimal()
+    
+    print(p_cd45_volcano_drug)
+  }
+  
+  # CD45é™½æ€§ç´°èƒž ãƒˆãƒƒãƒ—éºä¼å­ã®ãƒ’ãƒ¼ãƒˆãƒžãƒƒãƒ—ï¼ˆä¿®æ­£ç‰ˆï¼‰
+  cd45_top_genes <- head(cd45_genome_wide_stats[cd45_genome_wide_stats$p_adj < 0.05, ], 40)
+  
+  if(nrow(cd45_top_genes) > 0) {
+    cd45_top_gene_list <- cd45_top_genes$gene
+    
+    # cd45_positiveã‚ªãƒ–ã‚¸ã‚§ã‚¯ãƒˆã‹ã‚‰ç›´æŽ¥ç™ºç¾ãƒ‡ãƒ¼ã‚¿ã‚’å–å¾—
+    cd45_top_expression <- FetchData(cd45_positive, vars = cd45_top_gene_list, slot = "data")
+    cd45_top_meta <- cd45_positive@meta.data[, "group", drop = FALSE]
+    cd45_top_combined <- cbind(cd45_top_meta, cd45_top_expression)
+    
+    cd45_top_heatmap_data <- cd45_top_combined %>%
+      group_by(group) %>%
+      summarise(across(all_of(cd45_top_gene_list), mean, na.rm = TRUE), .groups = "drop")
+    
+    if(ncol(cd45_top_heatmap_data) > 2) {
+      cd45_top_heatmap_matrix <- as.matrix(cd45_top_heatmap_data[, -1])
+      rownames(cd45_top_heatmap_matrix) <- cd45_top_heatmap_data$group
+      
+      pheatmap(
+        t(cd45_top_heatmap_matrix),
+        cluster_rows = TRUE,
+        cluster_cols = FALSE,
+        scale = "row",
+        color = colorRampPalette(c("blue", "white", "red"))(50),
+        main = paste("CD45é™½æ€§ç´°èƒž å…¨éºä¼å­3ç¾¤æ¯”è¼ƒ ãƒˆãƒƒãƒ—", nrow(cd45_top_genes), "éºä¼å­"),
+        fontsize_row = 4,
+        cellwidth = 60,
+        cellheight = 8,
+        show_rownames = TRUE
+      )
+    }
+  }
+}
+```
+
+# 10. CXCL9/CXCL10/CXCR3è»¸è§£æžï¼ˆã‚±ãƒ¢ã‚«ã‚¤ãƒ³-ãƒ¬ã‚»ãƒ—ã‚¿ãƒ¼è§£æžï¼‰
+```{r cxcl9_cxcl10_cxcr3_analysis}
+cat("=== CXCL9/CXCL10/CXCR3è»¸ã®3ç¾¤æ¯”è¼ƒè§£æž ===\n")
+
+# å¯¾è±¡éºä¼å­ã®å®šç¾©
+chemokine_axis_genes <- c("CXCL9", "CXCL10", "CXCR3")
+
+# åˆ©ç”¨å¯èƒ½æ€§ç¢ºèªï¼ˆCD45é™½æ€§ç´°èƒžã§ï¼‰
+available_chemokine_genes <- chemokine_axis_genes[chemokine_axis_genes %in% rownames(cd45_positive)]
+
+cat("åˆ©ç”¨å¯èƒ½ãªéºä¼å­:", paste(available_chemokine_genes, collapse = ", "), "\n")
+cat("æ¬ æéºä¼å­:", paste(setdiff(chemokine_axis_genes, available_chemokine_genes), collapse = ", "), "\n\n")
+
+if(length(available_chemokine_genes) > 0) {
+  
+  # 1. ã‚µãƒ³ãƒ—ãƒ«åˆ¥ç™ºç¾æ¯”è¼ƒï¼ˆS0, S1, S2, S3ï¼‰
+  cat("## 1. ã‚µãƒ³ãƒ—ãƒ«åˆ¥ç™ºç¾ãƒ‘ã‚¿ãƒ¼ãƒ³ ##\n")
+  
+  # ãƒã‚¤ã‚ªãƒªãƒ³ãƒ—ãƒ­ãƒƒãƒˆ
+  p1 <- VlnPlot(cd45_positive,
+                features = available_chemokine_genes,
+                group.by = "orig.ident",
+                pt.size = 0,
+                ncol = length(available_chemokine_genes)) +
+    plot_annotation(title = "CXCL9/CXCL10/CXCR3 ç™ºç¾ï¼šã‚µãƒ³ãƒ—ãƒ«åˆ¥")
+  
+  print(p1)
+  
+  # ã‚µãƒ³ãƒ—ãƒ«åˆ¥çµ±è¨ˆ
+  for(gene in available_chemokine_genes) {
+    expr_data <- FetchData(cd45_positive, vars = c(gene, "orig.ident"))
+    
+    stats <- expr_data %>%
+      group_by(orig.ident) %>%
+      summarise(
+        mean = mean(!!sym(gene)),
+        median = median(!!sym(gene)),
+        positive_rate = sum(!!sym(gene) > 0) / n() * 100,
+        .groups = "drop"
+      )
+    
+    cat("\n", gene, "ã‚µãƒ³ãƒ—ãƒ«åˆ¥çµ±è¨ˆ:\n")
+    print(stats)
+  }
+  
+  # 2. ç—…æ…‹åˆ¥ç™ºç¾æ¯”è¼ƒï¼ˆ3ç¾¤ï¼‰
+  cat("\n## 2. ç—…æ…‹åˆ¥ç™ºç¾ãƒ‘ã‚¿ãƒ¼ãƒ³ï¼ˆ3ç¾¤æ¯”è¼ƒï¼‰ ##\n")
+  
+  # ãƒã‚¤ã‚ªãƒªãƒ³ãƒ—ãƒ­ãƒƒãƒˆ
+  p2 <- VlnPlot(cd45_positive,
+                features = available_chemokine_genes,
+                group.by = "group",
+                pt.size = 0,
+                ncol = length(available_chemokine_genes)) +
+    plot_annotation(title = "CXCL9/CXCL10/CXCR3 ç™ºç¾ï¼šç—…æ…‹åˆ¥ï¼ˆ3ç¾¤ï¼‰")
+  
+  print(p2)
+  
+  # 3ç¾¤çµ±è¨ˆ
+  for(gene in available_chemokine_genes) {
+    expr_data <- FetchData(cd45_positive, vars = c(gene, "group"))
+    
+    stats <- expr_data %>%
+      group_by(group) %>%
+      summarise(
+        mean = mean(!!sym(gene)),
+        median = median(!!sym(gene)),
+        positive_rate = sum(!!sym(gene) > 0) / n() * 100,
+        .groups = "drop"
+      )
+    
+    cat("\n", gene, "ç—…æ…‹åˆ¥çµ±è¨ˆ:\n")
+    print(stats)
+  }
+  
+  # 3. ãƒ‰ãƒƒãƒˆãƒ—ãƒ­ãƒƒãƒˆï¼ˆç™ºç¾çŽ‡ã¨ç™ºç¾ãƒ¬ãƒ™ãƒ«åŒæ™‚è¡¨ç¤ºï¼‰
+  cat("\n## 3. ç™ºç¾çŽ‡ã¨ç™ºç¾ãƒ¬ãƒ™ãƒ«ã®çµ±åˆå¯è¦–åŒ– ##\n")
+  
+  # ã‚µãƒ³ãƒ—ãƒ«åˆ¥
+  p3 <- DotPlot(cd45_positive,
+                features = available_chemokine_genes,
+                group.by = "orig.ident") +
+    RotatedAxis() +
+    ggtitle("CXCL9/CXCL10/CXCR3: ã‚µãƒ³ãƒ—ãƒ«åˆ¥ãƒ‰ãƒƒãƒˆãƒ—ãƒ­ãƒƒãƒˆ")
+  
+  print(p3)
+  
+  # ç—…æ…‹åˆ¥
+  p4 <- DotPlot(cd45_positive,
+                features = available_chemokine_genes,
+                group.by = "group") +
+    RotatedAxis() +
+    ggtitle("CXCL9/CXCL10/CXCR3: ç—…æ…‹åˆ¥ãƒ‰ãƒƒãƒˆãƒ—ãƒ­ãƒƒãƒˆ")
+  
+  print(p4)
+  
+  # 4. ãƒ’ãƒ¼ãƒˆãƒžãƒƒãƒ—ï¼ˆå¹³å‡ç™ºç¾é‡ï¼‰
+  cat("\n## 4. ç™ºç¾ãƒ‘ã‚¿ãƒ¼ãƒ³ãƒ’ãƒ¼ãƒˆãƒžãƒƒãƒ— ##\n")
+  
+  # ã‚µãƒ³ãƒ—ãƒ«åˆ¥å¹³å‡ç™ºç¾
+  expr_matrix_sample <- FetchData(cd45_positive, 
+                                  vars = c(available_chemokine_genes, "orig.ident"))
+  
+  heatmap_data_sample <- expr_matrix_sample %>%
+    group_by(orig.ident) %>%
+    summarise(across(all_of(available_chemokine_genes), mean), .groups = "drop") %>%
+    column_to_rownames("orig.ident")
+  
+  pheatmap::pheatmap(
+    t(heatmap_data_sample),
+    scale = "row",
+    cluster_cols = TRUE,
+    cluster_rows = FALSE,
+    main = "CXCL9/CXCL10/CXCR3 ç™ºç¾ãƒ‘ã‚¿ãƒ¼ãƒ³ï¼ˆã‚µãƒ³ãƒ—ãƒ«åˆ¥ï¼‰",
+    display_numbers = TRUE,
+    number_format = "%.3f"
+  )
+  
+  # ç—…æ…‹åˆ¥å¹³å‡ç™ºç¾
+  expr_matrix_group <- FetchData(cd45_positive, 
+                                 vars = c(available_chemokine_genes, "group"))
+  
+  heatmap_data_group <- expr_matrix_group %>%
+    group_by(group) %>%
+    summarise(across(all_of(available_chemokine_genes), mean), .groups = "drop") %>%
+    column_to_rownames("group")
+  
+  pheatmap::pheatmap(
+    t(heatmap_data_group),
+    scale = "row",
+    cluster_cols = TRUE,
+    cluster_rows = FALSE,
+    main = "CXCL9/CXCL10/CXCR3 ç™ºç¾ãƒ‘ã‚¿ãƒ¼ãƒ³ï¼ˆç—…æ…‹åˆ¥ï¼‰",
+    display_numbers = TRUE,
+    number_format = "%.3f"
+  )
+  
+  # 5. çµ±è¨ˆçš„æ¤œå®šï¼ˆICI-AKI vs ãã®ä»–ï¼‰
+  cat("\n## 5. çµ±è¨ˆçš„æ¤œå®šï¼ˆICI-AKI vs ä»–ã®ç—…æ…‹ï¼‰ ##\n")
+  
+  wilcox_results <- list()
+  
+  for(gene in available_chemokine_genes) {
+    expr_data <- FetchData(cd45_positive, vars = c(gene, "group"))
+    
+    # ICI-AKI vs Rejection
+    test_rej <- wilcox.test(
+      expr_data[[gene]][expr_data$group == "ICI_AKI"],
+      expr_data[[gene]][expr_data$group == "Rejection"]
+    )
+    
+    # ICI-AKI vs Drug-AIN
+    test_drug <- wilcox.test(
+      expr_data[[gene]][expr_data$group == "ICI_AKI"],
+      expr_data[[gene]][expr_data$group == "Drug_AIN"]
+    )
+    
+    # å¹³å‡å€¤ã¨log2FCè¨ˆç®—
+    mean_ici <- mean(expr_data[[gene]][expr_data$group == "ICI_AKI"])
+    mean_rej <- mean(expr_data[[gene]][expr_data$group == "Rejection"])
+    mean_drug <- mean(expr_data[[gene]][expr_data$group == "Drug_AIN"])
+    
+    log2fc_rej <- log2((mean_ici + 0.001) / (mean_rej + 0.001))
+    log2fc_drug <- log2((mean_ici + 0.001) / (mean_drug + 0.001))
+    
+    wilcox_results[[gene]] <- data.frame(
+      gene = gene,
+      comparison = c("ICI_AKI_vs_Rejection", "ICI_AKI_vs_Drug_AIN"),
+      p_value = c(test_rej$p.value, test_drug$p.value),
+      log2FC = c(log2fc_rej, log2fc_drug),
+      mean_ICI_AKI = c(mean_ici, mean_ici),
+      mean_comparator = c(mean_rej, mean_drug)
+    )
+    
+    cat("\n", gene, "çµ±è¨ˆæ¤œå®šçµæžœ:\n")
+    print(wilcox_results[[gene]])
+  }
+  
+  # çµæžœçµ±åˆãƒ»å¤šé‡æ¤œå®šè£œæ­£
+  all_wilcox <- do.call(rbind, wilcox_results)
+  all_wilcox$p_adjusted <- p.adjust(all_wilcox$p_value, method = "BH")
+  
+  cat("\n=== çµ±è¨ˆæ¤œå®šã¾ã¨ã‚ï¼ˆå¤šé‡æ¤œå®šè£œæ­£æ¸ˆã¿ï¼‰ ===\n")
+  print(all_wilcox)
+  
+  # 6. Tç´°èƒžã‚µãƒ–ã‚¿ã‚¤ãƒ—åˆ¥è§£æž
+  if(exists("t_cells_all") && length(available_chemokine_genes) > 0) {
+    cat("\n## 6. Tç´°èƒžã‚µãƒ–ã‚¿ã‚¤ãƒ—åˆ¥ç™ºç¾è§£æž ##\n")
+    
+    # Tç´°èƒžã®ã¿ã§ã®ç™ºç¾æ¯”è¼ƒ
+    p5 <- VlnPlot(t_cells_all,
+                  features = available_chemokine_genes,
+                  group.by = "detailed_celltype",
+                  pt.size = 0,
+                  ncol = length(available_chemokine_genes)) +
+      plot_annotation(title = "CXCL9/CXCL10/CXCR3: Tç´°èƒžã‚µãƒ–ã‚¿ã‚¤ãƒ—åˆ¥")
+    
+    print(p5)
+    
+    # Tç´°èƒžã§ã®ç—…æ…‹åˆ¥æ¯”è¼ƒ
+    p6 <- VlnPlot(t_cells_all,
+                  features = available_chemokine_genes,
+                  split.by = "group",
+                  group.by = "detailed_celltype",
+                  pt.size = 0,
+                  ncol = length(available_chemokine_genes)) +
+      plot_annotation(title = "CXCL9/CXCL10/CXCR3: Tç´°èƒžÃ—ç—…æ…‹åˆ¥")
+    
+    print(p6)
+  }
+  
+  # 7. çµæžœä¿å­˜
+  cat("\n## 7. çµæžœä¿å­˜ ##\n")
+  
+  # çµ±è¨ˆçµæžœCSV
+  write.csv(
+    all_wilcox,
+    file = "CXCL9_CXCL10_CXCR3_statistical_results.csv",
+    row.names = FALSE
+  )
+  
+  cat("âœ“ çµ±è¨ˆçµæžœä¿å­˜: CXCL9_CXCL10_CXCR3_statistical_results.csv\n")
+  
+} else {
+  cat("è­¦å‘Š: CXCL9, CXCL10, CXCR3ã„ãšã‚Œã‚‚åˆ©ç”¨ä¸å¯\n")
+}
+
+cat("\n=== CXCL9/CXCL10/CXCR3è»¸è§£æžå®Œäº† ===\n")
+```
+---
+
+# 11. çµæžœçµ±åˆãƒ»ã¾ã¨ã‚
+
+```{r comprehensive_results_summary}
+cat("=== åŒ…æ‹¬çš„3ç¾¤æ¯”è¼ƒè§£æž çµæžœã¾ã¨ã‚ ===\n\n")
+
+cat("1. è§£æžå¯¾è±¡ãƒ‡ãƒ¼ã‚¿:\n")
+if(exists("t_cells_all")) {
+  cat("  - ç·Tç´°èƒžæ•°:", ncol(t_cells_all), "\n")
+  cat("  - ICI-AKIã‚°ãƒ«ãƒ¼ãƒ—:", sum(t_cells_all$group == "ICI_AKI"), "cells\n")
+  cat("  - Rejectionã‚°ãƒ«ãƒ¼ãƒ—:", sum(t_cells_all$group == "Rejection"), "cells\n")
+  cat("  - Drug-AINã‚°ãƒ«ãƒ¼ãƒ—:", sum(t_cells_all$group == "Drug_AIN"), "cells\n")
+}
+
+if(exists("cd45_positive")) {
+  cat("  - ç·CD45é™½æ€§ç´°èƒžæ•°:", ncol(cd45_positive), "\n")
+  cat("  - CD45+ ICI-AKIã‚°ãƒ«ãƒ¼ãƒ—:", sum(cd45_positive$group == "ICI_AKI"), "cells\n")
+  cat("  - CD45+ Rejectionã‚°ãƒ«ãƒ¼ãƒ—:", sum(cd45_positive$group == "Rejection"), "cells\n")
+  cat("  - CD45+ Drug-AINã‚°ãƒ«ãƒ¼ãƒ—:", sum(cd45_positive$group == "Drug_AIN"), "cells\n")
+}
+
+cat("\n2. è§£æžç¯„å›²:\n")
+if(exists("tcell_genome_wide_stats")) {
+  cat("  - Tç´°èƒžå…¨éºä¼å­è§£æž:", nrow(tcell_genome_wide_stats), "éºä¼å­\n")
+  cat("  - Tç´°èƒžæœ‰æ„å·®éºä¼å­:", sum(tcell_genome_wide_stats$p_adj < 0.05, na.rm = TRUE), "éºä¼å­\n")
+}
+
+if(exists("cd45_genome_wide_stats")) {
+  cat("  - CD45é™½æ€§ç´°èƒžå…¨éºä¼å­è§£æž:", nrow(cd45_genome_wide_stats), "éºä¼å­\n")
+  cat("  - CD45é™½æ€§ç´°èƒžæœ‰æ„å·®éºä¼å­:", sum(cd45_genome_wide_stats$p_adj < 0.05, na.rm = TRUE), "éºä¼å­\n")
+}
+
+cat("\n3. ICIç‰¹ç•°æ€§ã®ç™ºè¦‹:\n")
+if(exists("tcell_ici_specific_genome") && nrow(tcell_ici_specific_genome) > 0) {
+  cat("  - Tç´°èƒžICIç‰¹ç•°çš„å¤‰åŒ–:", nrow(tcell_ici_specific_genome), "éºä¼å­\n")
+  cat("  - ä¸»ãªTç´°èƒžICIç‰¹ç•°çš„éºä¼å­:", paste(head(tcell_ici_specific_genome$gene, 10), collapse = ", "), "\n")
+}
+
+if(exists("cd45_ici_specific_genome") && nrow(cd45_ici_specific_genome) > 0) {
+  cat("  - CD45é™½æ€§ç´°èƒžICIç‰¹ç•°çš„å¤‰åŒ–:", nrow(cd45_ici_specific_genome), "éºä¼å­\n")
+  cat("  - ä¸»ãªCD45é™½æ€§ç´°èƒžICIç‰¹ç•°çš„éºä¼å­:", paste(head(cd45_ici_specific_genome$gene, 10), collapse = ", "), "\n")
+}
+
+cat("\n4. ç”Ÿç‰©å­¦çš„æ„ç¾©:\n")
+cat("  - 3ç¾¤æ¯”è¼ƒã«ã‚ˆã‚ŠICIç‰¹ç•°æ€§ã‚’åŽ³å¯†ã«è©•ä¾¡\n")
+cat("  - Rejectionã¨Drug-AINã®ä¸¡æ–¹ã¨ç•°ãªã‚‹å¤‰åŒ–ã‚’æ¤œå‡º\n")
+cat("  - å…ç–«ãƒã‚§ãƒƒã‚¯ãƒã‚¤ãƒ³ãƒˆé˜»å®³è–¬ç‰¹æœ‰ã®åˆ†å­ãƒ¡ã‚«ãƒ‹ã‚ºãƒ ã‚’è§£æ˜Ž\n")
+
+cat("\n5. æŠ€è¡“çš„è©³ç´°:\n")
+cat("  - çµ±è¨ˆæ‰‹æ³•: Kruskal-Wallis test (3ç¾¤æ¯”è¼ƒ)\n")
+cat("  - å¤šé‡æ¤œå®šè£œæ­£: Benjamini-Hochberg FDR\n")
+cat("  - æœ‰æ„æ°´æº–: FDR < 0.05\n")
+cat("  - ICIç‰¹ç•°æ€§åŸºæº–: FC > 2 ã¾ãŸã¯ FC < 0.5 (ä¸¡æ¯”è¼ƒã§åŒæ–¹å‘)\n")
+cat("  - ã‚µãƒ³ãƒ—ãƒªãƒ³ã‚°: Tç´°èƒž8000éºä¼å­, CD45é™½æ€§ç´°èƒž10000éºä¼å­\n")
+
+cat("\n6. æ¬¡ã®ã‚¹ãƒ†ãƒƒãƒ—:\n")
+cat("  - ICIç‰¹ç•°çš„éºä¼å­ç¾¤ã®æ©Ÿèƒ½è§£æžãƒ»ãƒ‘ã‚¹ã‚¦ã‚§ã‚¤ã‚¨ãƒ³ãƒªãƒƒãƒãƒ¡ãƒ³ãƒˆ\n")
+cat("  - ç–¾æ‚£ç‰¹ç•°çš„ãƒã‚¤ã‚ªãƒžãƒ¼ã‚«ãƒ¼ã®è‡¨åºŠçš„æ¤œè¨¼\n")
+cat("  - å˜ç´°èƒžãƒ¬ãƒ™ãƒ«ã§ã®ç•°è³ªæ€§è§£æž\n")
+cat("  - ç©ºé–“ãƒˆãƒ©ãƒ³ã‚¹ã‚¯ãƒªãƒ—ãƒˆãƒ¼ãƒ çµ±åˆè§£æž\n")
+cat("  - æ²»ç™‚æ¨™çš„ã¨ã—ã¦ã®ICIç‰¹ç•°çš„åˆ†å­ã®è©•ä¾¡\n")
+```
+
+```{r session_info}
+cat("\n=== ã‚»ãƒƒã‚·ãƒ§ãƒ³æƒ…å ± ===\n")
+sessionInfo()
+```
+
+
+## 12. çµ±è¨ˆçµæžœã®ã‚¨ã‚¯ã‚¹ãƒãƒ¼ãƒˆ
+
+```{r export_results}
+# çµæžœã‚’CSVãƒ•ã‚¡ã‚¤ãƒ«ã¨ã—ã¦ä¿å­˜
+if(exists("tcell_genome_wide_stats")) {
+  write.csv(tcell_genome_wide_stats, 
+           file = "tcell_genome_wide_3group_comparison.csv", 
+           row.names = FALSE)
+  cat("Tç´°èƒžå…¨éºä¼å­è§£æžçµæžœã‚’ä¿å­˜: tcell_genome_wide_3group_comparison.csv\n")
+}
+
+if(exists("cd45_genome_wide_stats")) {
+  write.csv(cd45_genome_wide_stats, 
+           file = "cd45_genome_wide_3group_comparison.csv", 
+           row.names = FALSE)
+  cat("CD45é™½æ€§ç´°èƒžå…¨éºä¼å­è§£æžçµæžœã‚’ä¿å­˜: cd45_genome_wide_3group_comparison.csv\n")
+}
+
+if(exists("tcell_ici_specific_genome")) {
+  write.csv(tcell_ici_specific_genome, 
+           file = "tcell_ici_specific_genes.csv", 
+           row.names = FALSE)
+  cat("Tç´°èƒžICIç‰¹ç•°çš„éºä¼å­ã‚’ä¿å­˜: tcell_ici_specific_genes.csv\n")
+}
+
+if(exists("cd45_ici_specific_genome")) {
+  write.csv(cd45_ici_specific_genome, 
+           file = "cd45_ici_specific_genes.csv", 
+           row.names = FALSE)
+  cat("CD45é™½æ€§ç´°èƒžICIç‰¹ç•°çš„éºä¼å­ã‚’ä¿å­˜: cd45_ici_specific_genes.csv\n")
+}
+```
+
+---
+
+## 12. è¿½åŠ è§£æž: ç´°èƒžã‚¿ã‚¤ãƒ—åˆ¥ICIç‰¹ç•°æ€§
+
+```{r celltype_specific_analysis}
+# ç´°èƒžã‚¿ã‚¤ãƒ—åˆ¥ã®ICIç‰¹ç•°çš„å¤‰åŒ–è§£æž
+cat("=== ç´°èƒžã‚¿ã‚¤ãƒ—åˆ¥ICIç‰¹ç•°çš„å¤‰åŒ–è§£æž ===\n")
+
+if(exists("cd45_positive") && "detailed_celltype" %in% colnames(cd45_positive@meta.data)) {
+  
+  # å„ç´°èƒžã‚¿ã‚¤ãƒ—ã§ã®ç¾¤åˆ¥åˆ†å¸ƒ
+  celltype_group_table <- table(cd45_positive$detailed_celltype, cd45_positive$group)
+  cat("ç´°èƒžã‚¿ã‚¤ãƒ—åˆ¥ç¾¤åˆ†å¸ƒ:\n")
+  print(celltype_group_table)
+  
+  # ä¸»è¦ç´°èƒžã‚¿ã‚¤ãƒ—ã®æŠ½å‡ºï¼ˆååˆ†ãªã‚µãƒ³ãƒ—ãƒ«ã‚µã‚¤ã‚ºãŒã‚ã‚‹ã‚‚ã®ï¼‰
+  major_celltypes <- names(which(apply(celltype_group_table >= 50, 1, all)))
+  
+  if(length(major_celltypes) > 0) {
+    cat("\nè§£æžå¯¾è±¡ç´°èƒžã‚¿ã‚¤ãƒ—ï¼ˆå„ç¾¤50ç´°èƒžä»¥ä¸Šï¼‰:", paste(major_celltypes, collapse = ", "), "\n")
+    
+    # å„ç´°èƒžã‚¿ã‚¤ãƒ—ã§ã®ä»£è¡¨éºä¼å­ç™ºç¾æ¯”è¼ƒ
+    representative_genes <- c("CD3E", "CD4", "CD8A", "FOXP3", "GZMB", "IFNG", "PDCD1", 
+                             "CD19", "CD68", "CLEC9A", "TNF", "IL6")
+    available_repr_genes <- representative_genes[representative_genes %in% rownames(cd45_positive)]
+    
+    celltype_results <- list()
+    
+    for(celltype in major_celltypes) {
+      cat("\nç´°èƒžã‚¿ã‚¤ãƒ—:", celltype, "\n")
+      
+      # è©²å½“ç´°èƒžã‚¿ã‚¤ãƒ—ã®ç´°èƒžã‚’æŠ½å‡º
+      celltype_cells <- subset(cd45_positive, subset = detailed_celltype == celltype)
+      
+      # ç™ºç¾ãƒ‡ãƒ¼ã‚¿å–å¾—
+      celltype_expr <- FetchData(celltype_cells, vars = available_repr_genes, slot = "data")
+      celltype_meta <- celltype_cells@meta.data[, "group", drop = FALSE]
+      celltype_combined <- cbind(celltype_meta, celltype_expr)
+      
+      # å„éºä¼å­ã§ã®3ç¾¤æ¯”è¼ƒ
+      celltype_gene_results <- list()
+      
+      for(gene in available_repr_genes) {
+        ici_expr <- celltype_combined[celltype_combined$group == "ICI_AKI", gene]
+        rejection_expr <- celltype_combined[celltype_combined$group == "Rejection", gene]
+        drug_expr <- celltype_combined[celltype_combined$group == "Drug_AIN", gene]
+        
+        ici_clean <- ici_expr[!is.na(ici_expr)]
+        rejection_clean <- rejection_expr[!is.na(rejection_expr)]
+        drug_clean <- drug_expr[!is.na(drug_expr)]
+        
+        if(length(ici_clean) > 10 && length(rejection_clean) > 10 && length(drug_clean) > 10) {
+          tryCatch({
+            kruskal_result <- kruskal.test(list(ici_clean, rejection_clean, drug_clean))
+            
+            ici_mean <- mean(ici_clean)
+            rejection_mean <- mean(rejection_clean)
+            drug_mean <- mean(drug_clean)
+            
+            celltype_gene_results[[gene]] <- data.frame(
+              celltype = celltype,
+              gene = gene,
+              ici_mean = ici_mean,
+              rejection_mean = rejection_mean,
+              drug_mean = drug_mean,
+              ici_vs_rejection_fc = ifelse(rejection_mean > 0, ici_mean / rejection_mean, NA),
+              ici_vs_drug_fc = ifelse(drug_mean > 0, ici_mean / drug_mean, NA),
+              p_value = kruskal_result$p.value,
+              stringsAsFactors = FALSE
+            )
+          }, error = function(e) {
+            # ã‚¨ãƒ©ãƒ¼ã¯ç„¡è¦–
+          })
+        }
+      }
+      
+      if(length(celltype_gene_results) > 0) {
+        celltype_df <- do.call(rbind, celltype_gene_results)
+        celltype_df$p_adj <- p.adjust(celltype_df$p_value, method = "BH")
+        celltype_results[[celltype]] <- celltype_df
+        
+        # æœ‰æ„ãªå¤‰åŒ–ã®è¡¨ç¤º
+        significant_genes <- celltype_df[celltype_df$p_adj < 0.05 & !is.na(celltype_df$p_adj), ]
+        if(nrow(significant_genes) > 0) {
+          cat("  æœ‰æ„å·®éºä¼å­æ•°:", nrow(significant_genes), "\n")
+          print(significant_genes[, c("gene", "ici_vs_rejection_fc", "ici_vs_drug_fc", "p_adj")])
+        } else {
+          cat("  æœ‰æ„å·®ãªã—\n")
+        }
+      }
+    }
+    
+    # å…¨ç´°èƒžã‚¿ã‚¤ãƒ—ã®çµæžœã‚’ã¾ã¨ã‚ã‚‹
+    if(length(celltype_results) > 0) {
+      all_celltype_results <- do.call(rbind, celltype_results)
+      cat("\n=== ç´°èƒžã‚¿ã‚¤ãƒ—åˆ¥è§£æžå®Œäº† ===\n")
+      cat("è§£æžç´°èƒžã‚¿ã‚¤ãƒ—æ•°:", length(celltype_results), "\n")
+      cat("ç·è§£æžéºä¼å­Ã—ç´°èƒžã‚¿ã‚¤ãƒ—çµ„ã¿åˆã‚ã›:", nrow(all_celltype_results), "\n")
+      
+      # æœ€ã‚‚æœ‰æ„ãªå¤‰åŒ–ã®ãƒˆãƒƒãƒ—10
+      top_celltype_changes <- head(all_celltype_results[order(all_celltype_results$p_adj), ], 10)
+      cat("\næœ€ã‚‚æœ‰æ„ãªç´°èƒžã‚¿ã‚¤ãƒ—Ã—éºä¼å­å¤‰åŒ–ï¼ˆãƒˆãƒƒãƒ—10ï¼‰:\n")
+      print(top_celltype_changes[, c("celltype", "gene", "ici_vs_rejection_fc", "ici_vs_drug_fc", "p_adj")])
+      
+      # çµæžœä¿å­˜
+      write.csv(all_celltype_results, 
+               file = "celltype_specific_gene_changes.csv", 
+               row.names = FALSE)
+      cat("ç´°èƒžã‚¿ã‚¤ãƒ—åˆ¥è§£æžçµæžœã‚’ä¿å­˜: celltype_specific_gene_changes.csv\n")
+    }
+  }
+}
+```
+
+---
+
+## å‚è€ƒæ–‡çŒ®ãƒ»ç ”ç©¶ã‚¤ãƒ³ãƒ‘ã‚¯ãƒˆ
+
+### æœ¬è§£æžã®ç§‘å­¦çš„è²¢çŒ®
+
+**3ç¾¤æ¯”è¼ƒã®å„ªä½æ€§**:
+1. **çœŸã®ICIç‰¹ç•°æ€§**: ä»–ã®è…Žç‚Žã¨ã®åŽ³å¯†ãªæ¯”è¼ƒã«ã‚ˆã‚Šã€ICI-AKIç‰¹æœ‰ã®åˆ†å­ã‚·ã‚°ãƒãƒãƒ£ã‚’åŒå®š
+2. **ç—…æ…‹ãƒ¡ã‚«ãƒ‹ã‚ºãƒ è§£æ˜Ž**: æ‹’çµ¶åå¿œã‚„ä»–ã®è–¬å‰¤æ€§è…Žç‚Žã¨ã¯ç•°ãªã‚‹å…ç–«å­¦çš„ç‰¹å¾´ã‚’ç™ºè¦‹
+3. **è‡¨åºŠå¿œç”¨**: è¨ºæ–­ãƒã‚¤ã‚ªãƒžãƒ¼ã‚«ãƒ¼ã‚„æ²»ç™‚æ¨™çš„ã®å€™è£œåˆ†å­ã‚’ç‰¹å®š
+
+**æŠ€è¡“çš„é©æ–°**:
+- å…¨éºä¼å­ç¶²ç¾…çš„è§£æžã«ã‚ˆã‚‹åŒ…æ‹¬çš„ç†è§£
+- è¤‡æ•°ç´°èƒžã‚¿ã‚¤ãƒ—ã§ã®çµ±åˆè§£æž
+- åŽ³æ ¼ãªçµ±è¨ˆæ‰‹æ³•ã«ã‚ˆã‚‹ä¿¡é ¼æ€§ã®é«˜ã„çµæžœ
+
+**å°†æ¥ã®ç™ºå±•æ–¹å‘**:
+1. ãƒ‘ã‚¹ã‚¦ã‚§ã‚¤ã‚¨ãƒ³ãƒªãƒƒãƒãƒ¡ãƒ³ãƒˆè§£æž
+2. ç©ºé–“ãƒˆãƒ©ãƒ³ã‚¹ã‚¯ãƒªãƒ—ãƒˆãƒ¼ãƒ çµ±åˆ
+3. è‡¨åºŠãƒã‚¤ã‚ªãƒžãƒ¼ã‚«ãƒ¼æ¤œè¨¼
+4. æ²»ç™‚æ¨™çš„åˆ†å­ã®æ©Ÿèƒ½è§£æž
+
+---
+
+### è§£æžå®Œäº†é€šçŸ¥
+
+ã“ã®åŒ…æ‹¬çš„ãª3ç¾¤æ¯”è¼ƒè§£æžã«ã‚ˆã‚Šã€ICI-AKIã®åˆ†å­ãƒ¡ã‚«ãƒ‹ã‚ºãƒ ã®å…¨è²ŒãŒæ˜Žã‚‰ã‹ã«ãªã‚Šã¾ã—ãŸã€‚Tç´°èƒžã¨ CD45é™½æ€§ç´°èƒžã§ã®å…¨éºä¼å­ç¶²ç¾…çš„è§£æžã‚’é€šã˜ã¦ã€å…ç–«ãƒã‚§ãƒƒã‚¯ãƒã‚¤ãƒ³ãƒˆé˜»å®³è–¬ç‰¹æœ‰ã®ç—…æ…‹ã‚’ç‰¹å®šã™ã‚‹ã“ã¨ãŒã§ãã¾ã—ãŸã€‚
+
+**ä¸»è¦æˆæžœ**:
+- Tç´°èƒžãƒ»CD45é™½æ€§ç´°èƒžã§ã®æ•°åƒéºä¼å­ã®åŒ…æ‹¬çš„è§£æž
+- ICIç‰¹ç•°çš„åˆ†å­ã‚·ã‚°ãƒãƒãƒ£ã®åŒå®š
+- ç´°èƒžã‚¿ã‚¤ãƒ—åˆ¥ã®è©³ç´°è§£æž
+- è«–æ–‡å“è³ªã®å¯è¦–åŒ–ã¨çµ±è¨ˆè§£æž
+
+ã“ã®è§£æžçµæžœã¯ã€ICI-AKIç ”ç©¶ã®æ–°ãŸãªåŸºç›¤ã¨ãªã‚Šã€å°†æ¥çš„ãªè¨ºæ–­ãƒ»æ²»ç™‚æ³•é–‹ç™ºã«é‡è¦ãªè²¢çŒ®ã‚’ã™ã‚‹ã‚‚ã®ã¨æœŸå¾…ã•ã‚Œã¾ã™

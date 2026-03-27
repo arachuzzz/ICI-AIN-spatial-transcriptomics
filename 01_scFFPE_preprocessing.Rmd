@@ -1,0 +1,914 @@
+---
+title: "scFFPEè…Žè‡“ã‚µãƒ³ãƒ—ãƒ«è§£æžãƒ¬ãƒãƒ¼ãƒˆ (Doubleté™¤åŽ»ç‰ˆ)"
+subtitle: "CosMX Spatial Transcriptomicsã¨ã®æ¯”è¼ƒè§£æž - æ”¹å–„ç‰ˆ 2025/10/27"
+author: "Arai"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    code_folding: hide
+    theme: flatly
+    fig_width: 12
+    fig_height: 8
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE,
+                      fig.width = 12, fig.height = 8)
+
+# ãƒ©ã‚¤ãƒ–ãƒ©ãƒªèª­ã¿è¾¼ã¿
+library(Seurat)
+library(dplyr)
+library(ggplot2)
+library(patchwork)
+# library(DT)  # ä¸€æ™‚çš„ã«ã‚³ãƒ¡ãƒ³ãƒˆã‚¢ã‚¦ãƒˆï¼ˆãƒ‘ãƒƒã‚±ãƒ¼ã‚¸ä¿®å¾©å¾Œã«æœ‰åŠ¹åŒ–ï¼‰
+library(knitr)
+library(viridis)
+# ===== 2025/10/27 è¿½åŠ : Doubleté™¤åŽ»ç”¨ãƒ‘ãƒƒã‚±ãƒ¼ã‚¸ =====
+if (!require("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+BiocManager::install("scDblFinder")
+library(scDblFinder)
+library(SingleCellExperiment)  # scDblFinderã®ä¾å­˜ãƒ‘ãƒƒã‚±ãƒ¼ã‚¸
+```
+
+# ãƒ—ãƒ­ã‚¸ã‚§ã‚¯ãƒˆæ¦‚è¦
+
+æœ¬ãƒ¬ãƒãƒ¼ãƒˆã¯ã€Dr. Naoka Murakami PIã®è…Žè‡“ç ”ç©¶ãƒ—ãƒ­ã‚¸ã‚§ã‚¯ãƒˆã«ãŠã‘ã‚‹**scFFPEè§£æžçµæžœ**ã‚’å ±å‘Šã—ã€æ—¢å­˜ã®**CosMX spatial transcriptomics**çµæžœã¨ã®æ¯”è¼ƒã‚’è¡Œã„ã¾ã™ã€‚
+
+## è§£æžå¯¾è±¡
+- **æŠ€è¡“**: Single-cell RNA-seq (FFPE processed)
+- **ã‚µãƒ³ãƒ—ãƒ«**: ãƒ’ãƒˆè…Žè‡“4ã‚µãƒ³ãƒ—ãƒ« (BRI-2419_BS20-28024, BS22-41795, BS23-11306, BS23-18276)
+- **æ¯”è¼ƒå¯¾è±¡**: CosMX spatial transcriptomicsï¼ˆåŒä¸€ã‚µãƒ³ãƒ—ãƒ«ã€289,868ç´°èƒžï¼‰
+
+```{r config}
+# ================================
+# è¨­å®šãƒ‘ãƒ©ãƒ¡ãƒ¼ã‚¿
+# ================================
+
+# ãƒ‘ã‚¹è¨­å®š
+SCFFPE_DATA_PATH <- "../outs/per_sample_outs"
+COSMX_RESULTS_PATH <- "../../naoka_kidney_5124 2/final_seurat_object_20250825(4samples).rds"
+
+# ã‚µãƒ³ãƒ—ãƒ«æƒ…å ±
+SAMPLE_NAMES <- c("BRI-2419_BS20-28024", "BRI-2419_BS22-41795", 
+                  "BRI-2419_BS23-11306", "BRI-2419_BS23-18276")
+SAMPLE_IDS <- c("S0_scFFPE", "S1_scFFPE", "S2_scFFPE", "S3_scFFPE")
+
+# è§£æžãƒ‘ãƒ©ãƒ¡ãƒ¼ã‚¿
+MIN_CELLS <- 3
+MIN_FEATURES <- 200
+MAX_MT_PERCENT <- 20
+
+cat("Configuration loaded successfully\n")
+cat("Samples to analyze:", length(SAMPLE_NAMES), "\n")
+```
+
+```{r data-loading}
+# ================================
+# ãƒ‡ãƒ¼ã‚¿èª­ã¿è¾¼ã¿
+# ================================
+
+# ã‚µãƒ³ãƒ—ãƒ«èª­ã¿è¾¼ã¿é–¢æ•°
+load_scffpe_sample <- function(sample_name, sample_id, data_path) {
+  full_path <- file.path(data_path, sample_name, "count", "sample_filtered_feature_bc_matrix")
+  
+  cat("Loading sample:", sample_id, "\n")
+  cat("Path:", full_path, "\n")
+  
+  if(dir.exists(full_path)) {
+    counts <- Read10X(full_path)
+    obj <- CreateSeuratObject(
+      counts = counts,
+      project = sample_id,
+      min.cells = MIN_CELLS,
+      min.features = MIN_FEATURES
+    )
+    
+    obj$sample <- sample_id
+    obj$original_sample <- sample_name
+    obj$technology <- "scFFPE"
+    obj[["percent.mt"]] <- PercentageFeatureSet(obj, pattern = "^MT-")
+    
+    cat("  - Cells:", ncol(obj), "\n")
+    cat("  - Genes:", nrow(obj), "\n")
+    
+    return(obj)
+  } else {
+    cat("ERROR: Path not found:", full_path, "\n")
+    return(NULL)
+  }
+}
+
+# å…¨ã‚µãƒ³ãƒ—ãƒ«ã®èª­ã¿è¾¼ã¿
+seurat_list <- list()
+for(i in seq_along(SAMPLE_NAMES)) {
+  obj <- load_scffpe_sample(SAMPLE_NAMES[i], SAMPLE_IDS[i], SCFFPE_DATA_PATH)
+  if(!is.null(obj)) {
+    seurat_list[[SAMPLE_IDS[i]]] <- obj
+  }
+}
+
+cat("\nSuccessfully loaded samples:", length(seurat_list), "\n")
+```
+
+```{r quality-control}
+# ================================
+# ãƒ‡ãƒ¼ã‚¿å“è³ªè©•ä¾¡
+# ================================
+
+if(length(seurat_list) > 0) {
+  
+  # å“è³ªæŒ‡æ¨™ã®ã‚µãƒžãƒªãƒ¼
+  quality_summary <- data.frame()
+  
+  for(i in seq_along(seurat_list)) {
+    sample_name <- names(seurat_list)[i]
+    obj <- seurat_list[[i]]
+    
+    summary_row <- data.frame(
+      Sample = sample_name,
+      Cells = ncol(obj),
+      Genes = nrow(obj),
+      Median_Features = median(obj$nFeature_RNA),
+      Median_UMI = median(obj$nCount_RNA),
+      Median_MT_percent = median(obj$percent.mt)
+    )
+    
+    quality_summary <- rbind(quality_summary, summary_row)
+  }
+  
+  print("Quality Summary:")
+  DT::datatable(quality_summary, options = list(scrollX = TRUE))
+  
+  # å“è³ªåˆ†å¸ƒã®å¯è¦–åŒ–
+  for(i in seq_along(seurat_list)) {
+    sample_name <- names(seurat_list)[i]
+    obj <- seurat_list[[i]]
+    
+    p1 <- VlnPlot(obj, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), 
+                  ncol = 3, pt.size = 0.1) +
+      plot_annotation(title = paste("Quality Metrics:", sample_name))
+    print(p1)
+    
+    # Scatter plot for feature-count relationship
+    p2 <- FeatureScatter(obj, feature1 = "nCount_RNA", feature2 = "nFeature_RNA") +
+      ggtitle(paste("Feature vs Count correlation:", sample_name))
+    print(p2)
+  }
+}
+```
+
+```{r integration}
+# ================================
+# ãƒ‡ãƒ¼ã‚¿çµ±åˆã¨æ¬¡å…ƒå‰Šæ¸›
+# ================================
+
+if(length(seurat_list) >= 2) {
+  # ãƒ¡ãƒ¢ãƒªåˆ¶é™ã®èª¿æ•´
+   library(future)
+   options(future.globals.maxSize = 8000 * 1024^2)  # 8GBã«è¨­å®š
+   plan("sequential")  # ã‚·ãƒ¼ã‚±ãƒ³ã‚·ãƒ£ãƒ«å®Ÿè¡Œã«è¨­å®š
+  
+ # å„ã‚µãƒ³ãƒ—ãƒ«ã®æ­£è¦åŒ–
+  seurat_list <- lapply(seurat_list, function(x) {
+    x <- NormalizeData(x, verbose = FALSE)
+    x <- FindVariableFeatures(x, selection.method = "vst", nfeatures = 2000, verbose = FALSE)
+    return(x)
+  })
+  
+  # çµ±åˆç”¨ç‰¹å¾´é‡ã®é¸æŠž
+  features <- SelectIntegrationFeatures(object.list = seurat_list)
+  
+  # ãƒ‡ãƒ¼ã‚¿çµ±åˆ
+  cat("Finding integration anchors...\n")
+  anchors <- FindIntegrationAnchors(object.list = seurat_list, 
+                                    anchor.features = features,
+                                    verbose = FALSE)
+  
+  cat("Integrating data...\n")
+  scffpe_integrated <- IntegrateData(anchorset = anchors, verbose = FALSE)
+  
+  # ã‚¹ã‚±ãƒ¼ãƒªãƒ³ã‚°ã¨æ¬¡å…ƒå‰Šæ¸›
+  DefaultAssay(scffpe_integrated) <- "integrated"
+  scffpe_integrated <- ScaleData(scffpe_integrated, verbose = FALSE)
+  scffpe_integrated <- RunPCA(scffpe_integrated, npcs = 30, verbose = FALSE)
+  scffpe_integrated <- RunUMAP(scffpe_integrated, reduction = "pca", dims = 1:30)
+  
+  # ã‚¯ãƒ©ã‚¹ã‚¿ãƒªãƒ³ã‚°
+  scffpe_integrated <- FindNeighbors(scffpe_integrated, reduction = "pca", dims = 1:30)
+  scffpe_integrated <- FindClusters(scffpe_integrated, resolution = 0.5)
+  
+  cat("Integration completed. Total cells:", ncol(scffpe_integrated), "\n")
+  
+  # ã‚µãƒ³ãƒ—ãƒ«çµ±è¨ˆ
+  sample_stats <- table(scffpe_integrated$sample)
+  print("Cell distribution by sample:")
+  print(sample_stats)
+  
+} else {
+  cat("Need at least 2 samples for integration\n")
+}
+```
+
+```{r doublet-removal, fig.height=10}
+# ================================
+# Doubleté™¤åŽ» (2025/10/27 è¿½åŠ )
+# ================================
+
+cat("\n")
+cat("========== DOUBLET DETECTION AND REMOVAL ==========\n")
+cat("Method: scDblFinder\n")
+cat("Date: 2025/10/27\n")
+cat("==================================================\n\n")
+
+# çµ±åˆå‰ã®ç´°èƒžæ•°ã‚’è¨˜éŒ²
+cells_before_doublet <- ncol(scffpe_integrated)
+cat("Total cells before doublet removal:", cells_before_doublet, "\n")
+
+# çµ±åˆå‰ã®ç´°èƒžæ•°ã‚’è¨˜éŒ²
+cells_before_doublet <- ncol(scffpe_integrated)
+cat("Total cells before doublet removal:", cells_before_doublet, "\n")
+
+# ãƒ¬ã‚¤ãƒ¤ãƒ¼ã‚’çµ±åˆã—ã¦ã‹ã‚‰SingleCellExperimentã‚ªãƒ–ã‚¸ã‚§ã‚¯ãƒˆã«å¤‰æ›
+DefaultAssay(scffpe_integrated) <- "RNA"
+scffpe_integrated <- JoinLayers(scffpe_integrated)
+sce <- as.SingleCellExperiment(scffpe_integrated, assay = "RNA")
+DefaultAssay(scffpe_integrated) <- "integrated"  # å…ƒã«æˆ»ã™
+
+# scDblFinderã‚’å®Ÿè¡Œï¼ˆã‚µãƒ³ãƒ—ãƒ«ã”ã¨ã«å®Ÿè¡Œï¼‰
+set.seed(123)  # å†ç¾æ€§ã®ãŸã‚
+sce <- scDblFinder(sce, 
+                   samples = "sample",  # ã‚µãƒ³ãƒ—ãƒ«æƒ…å ±ã‚’è€ƒæ…®
+                   BPPARAM = BiocParallel::SerialParam())  # ã‚·ãƒªã‚¢ãƒ«å®Ÿè¡Œ
+
+# Doubletäºˆæ¸¬çµæžœã‚’å–å¾—
+scffpe_integrated$scDblFinder.class <- sce$scDblFinder.class
+scffpe_integrated$scDblFinder.score <- sce$scDblFinder.score
+
+# Doubletçµ±è¨ˆ
+doublet_stats <- table(scffpe_integrated$scDblFinder.class)
+cat("\nDoublet detection results:\n")
+print(doublet_stats)
+
+doublet_rate <- round(sum(scffpe_integrated$scDblFinder.class == "doublet") / 
+                     ncol(scffpe_integrated) * 100, 2)
+cat("\nOverall doublet rate:", doublet_rate, "%\n")
+
+# ã‚µãƒ³ãƒ—ãƒ«åˆ¥ã®DoubletçŽ‡
+sample_doublet <- table(scffpe_integrated$sample, scffpe_integrated$scDblFinder.class)
+cat("\nDoublet distribution by sample:\n")
+print(sample_doublet)
+
+sample_doublet_rate <- round(prop.table(sample_doublet, 1) * 100, 2)
+cat("\nDoublet rate by sample (%):\n")
+print(sample_doublet_rate)
+
+# å¯è¦–åŒ–: Doubletã‚¹ã‚³ã‚¢ã®åˆ†å¸ƒ
+p1 <- ggplot(scffpe_integrated@meta.data, aes(x = scDblFinder.score, fill = scDblFinder.class)) +
+  geom_histogram(bins = 50, alpha = 0.7) +
+  scale_fill_manual(values = c("singlet" = "blue", "doublet" = "red")) +
+  theme_minimal() +
+  labs(title = "Distribution of Doublet Scores",
+       x = "Doublet Score",
+       y = "Number of Cells",
+       fill = "Classification") +
+  theme(legend.position = "top")
+
+# å¯è¦–åŒ–: UMAP with doublet classification
+p2 <- DimPlot(scffpe_integrated, 
+              group.by = "scDblFinder.class",
+              cols = c("singlet" = "gray", "doublet" = "red"),
+              pt.size = 0.5) +
+  ggtitle("UMAP: Doublet Classification")
+
+# å¯è¦–åŒ–: ã‚µãƒ³ãƒ—ãƒ«åˆ¥ã®Doubletåˆ†å¸ƒ
+doublet_df <- as.data.frame(sample_doublet_rate)
+colnames(doublet_df) <- c("Sample", "Class", "Percentage")
+
+p3 <- ggplot(doublet_df, aes(x = Sample, y = Percentage, fill = Class)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  scale_fill_manual(values = c("singlet" = "blue", "doublet" = "red")) +
+  theme_minimal() +
+  labs(title = "Doublet Rate by Sample",
+       y = "Percentage (%)",
+       x = "Sample") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# ãƒ—ãƒ­ãƒƒãƒˆè¡¨ç¤º
+print(p1)
+print(p2)
+print(p3)
+
+# Doubleté™¤å¤–
+scffpe_integrated <- subset(scffpe_integrated, subset = scDblFinder.class == "singlet")
+cells_after_doublet <- ncol(scffpe_integrated)
+
+cat("\n==================================================\n")
+cat("Doublet removal completed:\n")
+cat("  Cells before:", cells_before_doublet, "\n")
+cat("  Cells after:", cells_after_doublet, "\n")
+cat("  Cells removed:", cells_before_doublet - cells_after_doublet, "\n")
+cat("  Removal rate:", round((1 - cells_after_doublet/cells_before_doublet) * 100, 2), "%\n")
+cat("==================================================\n")
+
+# Doubleté™¤åŽ»å¾Œã®å†å‡¦ç†
+cat("\nRecalculating UMAP after doublet removal...\n")
+scffpe_integrated <- RunPCA(scffpe_integrated, npcs = 30, verbose = FALSE)
+scffpe_integrated <- RunUMAP(scffpe_integrated, reduction = "pca", dims = 1:30)
+scffpe_integrated <- FindNeighbors(scffpe_integrated, reduction = "pca", dims = 1:30)
+scffpe_integrated <- FindClusters(scffpe_integrated, resolution = 0.5)
+```
+
+```{r cd45-status}
+# ================================
+# CD45 statusè¿½åŠ  (2025/10/27 è¿½åŠ )
+# ================================
+
+cat("\n")
+cat("========== CD45 STATUS ASSIGNMENT ==========\n")
+# ã“ã“ã‚’å†’é ­ã«è¿½åŠ  / ç§»å‹•ï¼ˆé‡è¦ï¼‰
+DefaultAssay(scffpe_integrated) <- "RNA"
+scffpe_integrated <- JoinLayers(scffpe_integrated, assay = "RNA")
+
+# PTPRC (CD45)ã®ç™ºç¾ã‚’ç¢ºèª
+if("PTPRC" %in% rownames(scffpe_integrated)) {
+  
+  # CD45ç™ºç¾ã®é–¾å€¤è¨­å®šï¼ˆãƒ‡ãƒ¼ã‚¿ã®åˆ†å¸ƒã‚’ç¢ºèªï¼‰
+  cd45_expression <- scffpe_integrated@assays$RNA$data["PTPRC", ]
+  
+  # ç™ºç¾åˆ†å¸ƒã®çµ±è¨ˆ
+  cat("CD45 (PTPRC) expression statistics:\n")
+  cat("  Min:", min(cd45_expression), "\n")
+  cat("  Q1:", quantile(cd45_expression, 0.25), "\n")
+  cat("  Median:", median(cd45_expression), "\n")
+  cat("  Q3:", quantile(cd45_expression, 0.75), "\n")
+  cat("  Max:", max(cd45_expression), "\n")
+  
+  # é–¾å€¤è¨­å®šï¼ˆ0ã‚ˆã‚Šå¤§ãã‘ã‚Œã°é™½æ€§ã¨ã™ã‚‹ç°¡æ˜“çš„ãªæ–¹æ³•ï¼‰
+  cd45_threshold <- 0.5
+  cat("\nCD45+ threshold set to:", cd45_threshold, "\n")
+  
+  # CD45 statusåˆ—ã‚’è¿½åŠ 
+  scffpe_integrated$CD45_status <- ifelse(
+    cd45_expression > cd45_threshold,
+    "CD45+", "CD45-"
+  )
+  
+  # CD45 statusçµ±è¨ˆ
+  cd45_stats <- table(scffpe_integrated$CD45_status)
+  cat("\nCD45 status distribution:\n")
+  print(cd45_stats)
+  cat("CD45+ percentage:", 
+      round(sum(scffpe_integrated$CD45_status == "CD45+") / ncol(scffpe_integrated) * 100, 2), "%\n")
+  
+  # ã‚µãƒ³ãƒ—ãƒ«åˆ¥ã®CD45 status
+  sample_cd45 <- table(scffpe_integrated$sample, scffpe_integrated$CD45_status)
+  cat("\nCD45 status by sample:\n")
+  print(sample_cd45)
+  
+  # å¯è¦–åŒ–: CD45ç™ºç¾åˆ†å¸ƒ
+  p_cd45_hist <- ggplot(data.frame(CD45 = as.numeric(cd45_expression)), aes(x = CD45)) +
+    geom_histogram(bins = 50, fill = "steelblue", alpha = 0.7) +
+    geom_vline(xintercept = cd45_threshold, color = "red", linetype = "dashed", linewidth = 1) +
+    theme_minimal() +
+    labs(title = "CD45 (PTPRC) Expression Distribution",
+         x = "CD45 Expression (Log-normalized)",
+         y = "Number of Cells") +
+    annotate("text", x = cd45_threshold + 0.5, y = Inf, 
+             label = paste("Threshold =", cd45_threshold), 
+             vjust = 2, hjust = 0, color = "red")
+  
+  # å¯è¦–åŒ–: UMAP with CD45 status
+  p_cd45_umap <- DimPlot(scffpe_integrated, 
+                         group.by = "CD45_status",
+                         cols = c("CD45+" = "red", "CD45-" = "gray"),
+                         pt.size = 0.5) +
+    ggtitle("UMAP: CD45 Status")
+  
+  # å¯è¦–åŒ–: CD45ç™ºç¾ã®FeaturePlot
+  p_cd45_feature <- FeaturePlot(scffpe_integrated, 
+                                features = "PTPRC",
+                                pt.size = 0.5) +
+    ggtitle("CD45 (PTPRC) Expression")
+  
+  # ãƒ—ãƒ­ãƒƒãƒˆè¡¨ç¤º
+  print(p_cd45_hist)
+  print(p_cd45_umap)
+  print(p_cd45_feature)
+  
+  # integatedã‚¢ãƒƒã‚»ã‚¤ã«æˆ»ã™
+  DefaultAssay(scffpe_integrated) <- "integrated"
+  
+} else {
+  cat("WARNING: PTPRC (CD45) not found in the dataset\n")
+  scffpe_integrated$CD45_status <- "Unknown"
+}
+
+cat("============================================\n")
+```
+
+# çµ±åˆã‚ªãƒ–ã‚¸ã‚§ã‚¯ãƒˆã®ä¿å­˜
+saveRDS(scffpe_integrated, "scffpe_integrated_checkpoint.rds")
+save.image("integration_completed.RData")
+
+```{r visualization}
+# ================================
+# åŸºæœ¬å¯è¦–åŒ–
+# ================================
+
+if(exists("scffpe_integrated")) {
+  
+  # UMAP: ã‚µãƒ³ãƒ—ãƒ«åˆ¥
+  p1 <- DimPlot(scffpe_integrated, reduction = "umap", group.by = "sample") +
+    ggtitle("UMAP: scFFPE Samples")
+  print(p1)
+  
+  # UMAP: ã‚¯ãƒ©ã‚¹ã‚¿ãƒ¼åˆ¥
+  p2 <- DimPlot(scffpe_integrated, reduction = "umap", label = TRUE) +
+    ggtitle("UMAP: Cell Clusters")
+  print(p2)
+  
+  # ã‚¯ãƒ©ã‚¹ã‚¿ãƒ¼çµ±è¨ˆ
+  cluster_stats <- table(scffpe_integrated$sample, scffpe_integrated$seurat_clusters)
+  print("Cluster distribution by sample:")
+  print(cluster_stats)
+}
+```
+
+# æ—¢å­˜ã®checkpointãƒ•ã‚¡ã‚¤ãƒ«ã‚’å‰Šé™¤
+if(file.exists("scffpe_integrated_checkpoint.rds")) {
+  file.remove("scffpe_integrated_checkpoint.rds")
+}
+
+# resultsãƒ•ã‚©ãƒ«ãƒ€ãŒå­˜åœ¨ã—ãªã„å ´åˆã¯ä½œæˆ
+if(!dir.exists("results")) {
+  dir.create("results")
+}
+
+# æœ€çµ‚ç‰ˆã®ã¿ä¿å­˜ (doubleté™¤åŽ»æ¸ˆã¿ãƒãƒ¼ã‚¸ãƒ§ãƒ³)
+saveRDS(scffpe_integrated, "results/scffpe_integrated_final_doublet_removed.rds")
+cat("\n=== SAVED: scffpe_integrated_final_doublet_removed.rds ===\n")
+cat("This file contains doublet-removed and CD45-annotated data\n")
+cat("Date: 2025/10/27\n")
+
+# å…¨ä½œæ¥­ç’°å¢ƒã®ä¿å­˜
+save.image("scffpe_session_day1.RData")
+
+# é€²æ—ãƒ­ã‚°
+cat("Day 1 completed:", Sys.time(), "\n", 
+    "Completed: config, data-loading, quality-control, integration, visualization\n",
+    "Next: immune-cell-analysis\n",
+    file = "progress_log.txt")
+
+
+```{r immune-cell-analysis}
+# ================================
+# å…ç–«ç´°èƒžè§£æžï¼ˆCosMXæ¯”è¼ƒç”¨ï¼‰
+# ================================
+
+if(exists("scffpe_integrated")) {
+  
+  # RNA assayã«åˆ‡ã‚Šæ›¿ãˆ
+  DefaultAssay(scffpe_integrated) <- "RNA"
+  
+  # ãƒ¬ã‚¤ãƒ¤ãƒ¼ã‚’çµ±åˆï¼ˆé‡è¦ãªä¿®æ­£ï¼‰
+  scffpe_integrated <- JoinLayers(scffpe_integrated, assay = "RNA")
+  
+  # CD45/PTPRCç™ºç¾ã«ã‚ˆã‚‹å…ç–«ç´°èƒžåˆ†é¡ž
+  if("PTPRC" %in% rownames(scffpe_integrated)) {
+    
+    cd45_threshold <- 0.5
+    scffpe_integrated$CD45_status <- ifelse(
+      scffpe_integrated@assays$RNA$data["PTPRC", ] > cd45_threshold, 
+      "CD45+", "CD45-"
+    )
+    
+    # CD45ç™ºç¾ã®UMAP
+    p1 <- FeaturePlot(scffpe_integrated, features = "PTPRC", reduction = "umap") +
+      ggtitle("CD45/PTPRC Expression")
+    print(p1)
+    
+    # CD45+/CD45-ã®åˆ†å¸ƒ
+    p2 <- DimPlot(scffpe_integrated, group.by = "CD45_status", reduction = "umap") +
+      ggtitle("CD45+ vs CD45- Cells")
+    print(p2)
+    
+    # ã‚µãƒ³ãƒ—ãƒ«åˆ¥CD45+ç´°èƒžçµ±è¨ˆ
+    cd45_stats <- scffpe_integrated@meta.data %>%
+      group_by(sample, CD45_status) %>%
+      summarise(count = n(), .groups = 'drop') %>%
+      tidyr::spread(CD45_status, count, fill = 0) %>%
+      mutate(
+        total = `CD45+` + `CD45-`,
+        cd45_ratio = `CD45+` / total
+      )
+    
+    print("CD45+ Cell Statistics (scFFPE):")
+    DT::datatable(cd45_stats, options = list(scrollX = TRUE))
+    
+  } else {
+    cat("PTPRC gene not found in scFFPE data\n")
+  }
+}
+```
+
+```{r t-cell-analysis}
+# ================================
+# Tç´°èƒžã‚µãƒ–ã‚»ãƒƒãƒˆè§£æž
+# ================================
+
+if(exists("scffpe_integrated")) {
+  
+  # Tç´°èƒžãƒžãƒ¼ã‚«ãƒ¼ã®ç¢ºèª
+  t_markers <- c("CD4", "CD8A", "CD8B", "FOXP3")
+  available_t <- t_markers[t_markers %in% rownames(scffpe_integrated)]
+  
+  cat("Available T cell markers:", paste(available_t, collapse = ", "), "\n")
+  
+  if(length(available_t) > 0) {
+    
+    # CD4/CD8åˆ†é¡ž
+    if("CD4" %in% available_t) {
+      scffpe_integrated$CD4_pos <- scffpe_integrated@assays$RNA$data["CD4", ] > 0.5
+    }
+    
+    if("CD8A" %in% available_t) {
+      scffpe_integrated$CD8_pos <- scffpe_integrated@assays$RNA$data["CD8A", ] > 0.5
+    }
+    
+    # Tç´°èƒžã‚µãƒ–ã‚»ãƒƒãƒˆå®šç¾©
+    if("CD4_pos" %in% colnames(scffpe_integrated@meta.data) && 
+       "CD8_pos" %in% colnames(scffpe_integrated@meta.data)) {
+      
+      scffpe_integrated$T_cell_subset <- case_when(
+        scffpe_integrated$CD4_pos & !scffpe_integrated$CD8_pos ~ "CD4+",
+        !scffpe_integrated$CD4_pos & scffpe_integrated$CD8_pos ~ "CD8+",
+        scffpe_integrated$CD4_pos & scffpe_integrated$CD8_pos ~ "Double_positive",
+        TRUE ~ "Other"
+      )
+      
+      # Tç´°èƒžã‚µãƒ–ã‚»ãƒƒãƒˆã®UMAP
+      p1 <- DimPlot(scffpe_integrated, group.by = "T_cell_subset", reduction = "umap") +
+        ggtitle("T Cell Subsets (scFFPE)")
+      print(p1)
+      
+      # ã‚µãƒ³ãƒ—ãƒ«åˆ¥Tç´°èƒžçµ±è¨ˆ
+      t_stats <- table(scffpe_integrated$sample, scffpe_integrated$T_cell_subset)
+      print("T cell subset distribution by sample (scFFPE):")
+      print(t_stats)
+      
+      # CD4:CD8æ¯”çŽ‡è¨ˆç®—
+      cd4_cd8_ratio <- scffpe_integrated@meta.data %>%
+        group_by(sample) %>%
+        summarise(
+          CD4_count = sum(CD4_pos & !CD8_pos, na.rm = TRUE),
+          CD8_count = sum(!CD4_pos & CD8_pos, na.rm = TRUE),
+          CD4_CD8_ratio = ifelse(CD8_count > 0, CD4_count / CD8_count, Inf),
+          .groups = 'drop'
+        )
+      
+      print("CD4:CD8 ratio by sample (scFFPE):")
+      DT::datatable(cd4_cd8_ratio)
+    }
+    
+    # Tregè§£æž
+    if("FOXP3" %in% available_t && "CD4_pos" %in% colnames(scffpe_integrated@meta.data)) {
+      scffpe_integrated$FOXP3_pos <- scffpe_integrated@assays$RNA$data["FOXP3", ] > 0.5
+      scffpe_integrated$Treg_FOXP3 <- scffpe_integrated$CD4_pos & scffpe_integrated$FOXP3_pos
+      
+      cat("FOXP3+ Treg cells found:", sum(scffpe_integrated$Treg_FOXP3), "\n")
+      
+      # Tregã®UMAP
+      p_treg <- DimPlot(scffpe_integrated, group.by = "Treg_FOXP3", reduction = "umap") +
+        ggtitle("Treg (CD4+FOXP3+) Distribution")
+      print(p_treg)
+    }
+  }
+}
+```
+
+```{r b-cell-analysis}
+# ================================
+# Bç´°èƒžè§£æž
+# ================================
+
+if(exists("scffpe_integrated")) {
+  
+  # Bç´°èƒžãƒžãƒ¼ã‚«ãƒ¼
+  b_markers <- c("CD19", "MS4A1", "CD79A", "CD79B")
+  available_b <- b_markers[b_markers %in% rownames(scffpe_integrated)]
+  
+  cat("Available B cell markers:", paste(available_b, collapse = ", "), "\n")
+  
+  if(length(available_b) > 0) {
+    
+    # Bç´°èƒžã‚¹ã‚³ã‚¢è¨ˆç®—
+    b_score <- Matrix::colMeans(scffpe_integrated@assays$RNA$data[available_b, , drop = FALSE])
+    scffpe_integrated$B_cell_score <- b_score
+    scffpe_integrated$B_cell_pos <- b_score > quantile(b_score, 0.8)
+    
+    # ç´°èƒžã‚¿ã‚¤ãƒ—åˆ†é¡ž
+    if("CD4_pos" %in% colnames(scffpe_integrated@meta.data) || 
+       "CD8_pos" %in% colnames(scffpe_integrated@meta.data)) {
+      
+      scffpe_integrated$cell_identity <- case_when(
+        scffpe_integrated$B_cell_pos ~ "B_cell",
+        (scffpe_integrated$CD4_pos | scffpe_integrated$CD8_pos) ~ "T_cell",
+        scffpe_integrated$CD45_status == "CD45+" ~ "Other_immune",
+        TRUE ~ "Non_immune"
+      )
+      
+      # ç´°èƒžã‚¿ã‚¤ãƒ—åˆ†å¸ƒ
+      p1 <- DimPlot(scffpe_integrated, group.by = "cell_identity", reduction = "umap") +
+        ggtitle("Cell Type Classification (scFFPE)")
+      print(p1)
+      
+      # çµ±è¨ˆè¡¨
+      cell_counts <- table(scffpe_integrated$sample, scffpe_integrated$cell_identity)
+      print("Cell type distribution by sample (scFFPE):")
+      print(cell_counts)
+    }
+  }
+}
+```
+
+```{r cxcr3-analysis}
+# ================================
+# CXCR3è»¸è§£æžï¼ˆCosMXæ¯”è¼ƒç”¨ï¼‰
+# ================================
+
+if(exists("scffpe_integrated")) {
+  
+  # CXCR3è»¸éºä¼å­
+  cxcr3_genes <- c("CXCR3", "CXCL9", "CXCL10", "CXCL11")
+  available_cxcr3 <- cxcr3_genes[cxcr3_genes %in% rownames(scffpe_integrated)]
+  
+  cat("Available CXCR3 axis genes:", paste(available_cxcr3, collapse = ", "), "\n")
+  
+  if(length(available_cxcr3) > 0) {
+    
+    # å„éºä¼å­ã®ç™ºç¾ãƒ—ãƒ­ãƒƒãƒˆ
+    for(gene in available_cxcr3) {
+      p <- FeaturePlot(scffpe_integrated, features = gene, reduction = "umap") +
+        ggtitle(paste("scFFPE:", gene, "Expression"))
+      print(p)
+      
+      # ã‚µãƒ³ãƒ—ãƒ«åˆ¥ç™ºç¾
+      p_vln <- VlnPlot(scffpe_integrated, features = gene, group.by = "sample", pt.size = 0) +
+        ggtitle(paste(gene, "Expression by Sample (scFFPE)"))
+      print(p_vln)
+    }
+    
+    # CXCR3è»¸ã‚¹ã‚³ã‚¢è¨ˆç®—
+    if(length(available_cxcr3) >= 2) {
+      cxcr3_score <- Matrix::colMeans(scffpe_integrated@assays$RNA$data[available_cxcr3, , drop = FALSE])
+      scffpe_integrated$CXCR3_axis_score <- cxcr3_score
+      
+      # ã‚¹ã‚³ã‚¢åˆ†å¸ƒ
+      p_score <- FeaturePlot(scffpe_integrated, features = "CXCR3_axis_score", reduction = "umap") +
+        ggtitle("CXCR3 Axis Score (scFFPE)")
+      print(p_score)
+      
+      # é«˜ç™ºç¾ç´°èƒžã®çµ±è¨ˆ
+      high_cxcr3_stats <- scffpe_integrated@meta.data %>%
+        group_by(sample) %>%
+        summarise(
+          total_cells = n(),
+          high_score_cells = sum(CXCR3_axis_score > quantile(CXCR3_axis_score, 0.9)),
+          high_score_ratio = high_score_cells / total_cells,
+          .groups = 'drop'
+        )
+      
+      print("High CXCR3 axis expression (scFFPE):")
+      DT::datatable(high_cxcr3_stats)
+    }
+  }
+}
+```
+
+```{r proliferation-analysis}
+# ================================
+# ç´°èƒžå¢—æ®–è§£æž
+# ================================
+
+if(exists("scffpe_integrated")) {
+  
+  # å¢—æ®–ãƒžãƒ¼ã‚«ãƒ¼
+  prolif_markers <- c("MKI67", "PCNA", "TOP2A", "CCNB1")
+  available_prolif <- prolif_markers[prolif_markers %in% rownames(scffpe_integrated)]
+  
+  cat("Available proliferation markers:", paste(available_prolif, collapse = ", "), "\n")
+  
+  if("MKI67" %in% available_prolif) {
+    
+    # Ki-67ç™ºç¾è§£æž
+    p1 <- FeaturePlot(scffpe_integrated, features = "MKI67", reduction = "umap") +
+      ggtitle("Ki-67 Expression (scFFPE)")
+    print(p1)
+    
+    # Ki-67é™½æ€§ç´°èƒžã®åŒå®š
+    ki67_threshold <- quantile(scffpe_integrated@assays$RNA$data["MKI67", ], 0.95)
+    scffpe_integrated$Ki67_positive <- scffpe_integrated@assays$RNA$data["MKI67", ] > ki67_threshold
+    
+    # å¢—æ®–çµ±è¨ˆ
+    if("cell_identity" %in% colnames(scffpe_integrated@meta.data)) {
+      prolif_stats <- scffpe_integrated@meta.data %>%
+        group_by(sample, cell_identity) %>%
+        summarise(
+          total = n(),
+          ki67_pos = sum(Ki67_positive),
+          prolif_ratio = ki67_pos / total,
+          .groups = 'drop'
+        )
+      
+      print("Proliferation by cell type and sample (scFFPE):")
+      DT::datatable(prolif_stats)
+    }
+    
+    # ã‚µãƒ³ãƒ—ãƒ«åˆ¥å¢—æ®–çŽ‡
+    sample_prolif <- scffpe_integrated@meta.data %>%
+      group_by(sample) %>%
+      summarise(
+        total_cells = n(),
+        prolif_cells = sum(Ki67_positive),
+        prolif_rate = prolif_cells / total_cells,
+        .groups = 'drop'
+      )
+    
+    print("Overall proliferation by sample (scFFPE):")
+    DT::datatable(sample_prolif)
+  }
+}
+```
+
+```{r cosmx-comparison}
+# ================================
+# CosMXã¨ã®æ¯”è¼ƒè§£æž
+# ================================
+
+# CosMXãƒ‡ãƒ¼ã‚¿ã®èª­ã¿è¾¼ã¿
+if(file.exists(COSMX_RESULTS_PATH)) {
+  
+  cat("Loading CosMX results for comparison...\n")
+  cosmx_obj <- readRDS(COSMX_RESULTS_PATH)
+  
+  cat("CosMX data loaded:\n")
+  cat("  - Cells:", ncol(cosmx_obj), "\n")
+  cat("  - Genes:", nrow(cosmx_obj), "\n")
+  
+  # å…±é€šéºä¼å­ã®ç¢ºèª
+  if(exists("scffpe_integrated")) {
+    common_genes <- intersect(rownames(cosmx_obj), rownames(scffpe_integrated))
+    cat("Common genes between CosMX and scFFPE:", length(common_genes), "\n")
+    
+    # CD45+ç´°èƒžæ¯”çŽ‡ã®æ¯”è¼ƒ
+    if("CD45_status" %in% colnames(cosmx_obj@meta.data) && 
+       "CD45_status" %in% colnames(scffpe_integrated@meta.data)) {
+      
+      # CosMXçµ±è¨ˆ
+      cosmx_cd45 <- cosmx_obj@meta.data %>%
+        group_by(sample) %>%
+        summarise(
+          total = n(),
+          cd45_pos = sum(CD45_status == "CD45+"),
+          cd45_ratio_cosmx = cd45_pos / total,
+          .groups = 'drop'
+        ) %>%
+        select(sample, cd45_ratio_cosmx)
+      
+      # scFFPEçµ±è¨ˆ
+      scffpe_cd45 <- scffpe_integrated@meta.data %>%
+        mutate(sample = gsub("_scFFPE", "", sample)) %>%  # ã‚µãƒ³ãƒ—ãƒ«åã‚’çµ±ä¸€
+        group_by(sample) %>%
+        summarise(
+          total = n(),
+          cd45_pos = sum(CD45_status == "CD45+"),
+          cd45_ratio_scffpe = cd45_pos / total,
+          .groups = 'drop'
+        ) %>%
+        select(sample, cd45_ratio_scffpe)
+      
+      # æ¯”è¼ƒè¡¨ä½œæˆ
+      comparison_table <- merge(cosmx_cd45, scffpe_cd45, by = "sample", all = TRUE)
+      comparison_table$ratio_difference <- comparison_table$cd45_ratio_scffpe - comparison_table$cd45_ratio_cosmx
+      
+      print("CD45+ Cell Ratio Comparison:")
+      DT::datatable(comparison_table, options = list(scrollX = TRUE)) %>%
+        DT::formatRound(columns = c("cd45_ratio_cosmx", "cd45_ratio_scffpe", "ratio_difference"), digits = 4)
+    }
+  }
+  
+} else {
+  cat("CosMX results file not found at:", COSMX_RESULTS_PATH, "\n")
+}
+```
+
+```{r marker-genes}
+# ================================
+# ãƒžãƒ¼ã‚«ãƒ¼éºä¼å­è§£æž
+# ================================
+
+if(exists("scffpe_integrated")) {
+  
+  # ã‚¯ãƒ©ã‚¹ã‚¿ãƒ¼ãƒžãƒ¼ã‚«ãƒ¼ã®æ¤œç´¢
+  DefaultAssay(scffpe_integrated) <- "RNA"
+  scffpe_integrated <- JoinLayers(scffpe_integrated)
+  
+  cat("Finding marker genes for clusters...\n")
+  markers <- FindAllMarkers(scffpe_integrated, 
+                           only.pos = TRUE, 
+                           min.pct = 0.25, 
+                           logfc.threshold = 0.25,
+                           max.cells.per.ident = 500)  # é«˜é€ŸåŒ–ã®ãŸã‚
+  
+  if(nrow(markers) > 0) {
+    # ãƒˆãƒƒãƒ—ãƒžãƒ¼ã‚«ãƒ¼ã®è¡¨ç¤º
+    top_markers <- markers %>%
+      group_by(cluster) %>%
+      top_n(n = 5, wt = avg_log2FC)
+    
+    print("Top marker genes by cluster (scFFPE):")
+    # DT::datatable(top_markers, options = list(scrollX = TRUE, pageLength = 10))
+    # DTãƒ‘ãƒƒã‚±ãƒ¼ã‚¸ä¿®å¾©å¾Œã«ä¸Šè¨˜ã‚’æœ‰åŠ¹åŒ–ã€‚ç¾åœ¨ã¯é€šå¸¸ã®printä½¿ç”¨
+    print(as.data.frame(top_markers))
+    
+    # ãƒžãƒ¼ã‚«ãƒ¼éºä¼å­ã®ãƒ’ãƒ¼ãƒˆãƒžãƒƒãƒ—
+    top_genes <- top_markers %>%
+      top_n(n = 2, wt = avg_log2FC) %>%
+      pull(gene) %>%
+      unique()
+    
+    if(length(top_genes) > 0) {
+      p_heatmap <- DoHeatmap(scffpe_integrated, features = top_genes[1:min(20, length(top_genes))]) +
+        ggtitle("Top Marker Genes Heatmap (scFFPE)")
+      print(p_heatmap)
+    }
+  }
+}
+```
+
+```{r save-results}
+# ================================
+# çµæžœä¿å­˜
+# ================================
+
+if(exists("scffpe_integrated")) {
+  
+  # è§£æžã‚ªãƒ–ã‚¸ã‚§ã‚¯ãƒˆã®ä¿å­˜ (doubleté™¤åŽ»ãƒ»CD45ã‚¢ãƒŽãƒ†ãƒ¼ã‚·ãƒ§ãƒ³æ¸ˆã¿)
+  saveRDS(scffpe_integrated, "results/scffpe_integrated_object_doublet_removed.rds")
+  cat("scFFPE integrated object saved (doublet-removed version)\n")
+  
+  # Doubleté™¤åŽ»çµ±è¨ˆã®ä¿å­˜
+  doublet_summary <- data.frame(
+    Sample = names(table(scffpe_integrated$sample)),
+    Total_Cells = as.numeric(table(scffpe_integrated$sample)),
+    CD45_Positive = as.numeric(table(scffpe_integrated$sample[scffpe_integrated$CD45_status == "CD45+"])),
+    CD45_Negative = as.numeric(table(scffpe_integrated$sample[scffpe_integrated$CD45_status == "CD45-"]))
+  )
+  write.csv(doublet_summary, "results/scffpe_doublet_removal_summary.csv", row.names = FALSE)
+  cat("Doublet removal summary saved\n")
+  
+  # ãƒžãƒ¼ã‚«ãƒ¼éºä¼å­ã®ä¿å­˜
+  if(exists("markers") && nrow(markers) > 0) {
+    write.csv(markers, "results/scffpe_cluster_markers_doublet_removed.csv", row.names = FALSE)
+    cat("Marker genes saved (doublet-removed version)\n")
+  }
+  
+  # ã‚»ãƒƒã‚·ãƒ§ãƒ³æƒ…å ±
+  cat("\n=== Analysis Completed ===\n")
+  cat("Session completed at:", as.character(Sys.time()), "\n")
+  cat("R version:", R.version.string, "\n")
+  cat("Doublet removal: Completed\n")
+  cat("CD45 annotation: Completed\n")
+  cat("Output files:\n")
+  cat("  - results/scffpe_integrated_final_doublet_removed.rds\n")
+  cat("  - results/scffpe_integrated_object_doublet_removed.rds\n")
+  cat("  - results/scffpe_doublet_removal_summary.csv\n")
+}
+```
+
+# è§£æžçµæžœã‚µãƒžãƒªãƒ¼
+
+## ä¸»è¦ç™ºè¦‹
+
+1. **ãƒ‡ãƒ¼ã‚¿å“è³ª**: scFFPEå‡¦ç†ã«ã‚ˆã‚‹ç´°èƒžå›žåŽçŽ‡ã¨CosMXã¨ã®æ¯”è¼ƒ
+2. **å…ç–«ç´°èƒžæ¤œå‡º**: CD45+ç´°èƒžã®æ¤œå‡ºæ„Ÿåº¦æ¯”è¼ƒ
+3. **Tç´°èƒžã‚µãƒ–ã‚»ãƒƒãƒˆ**: CD4/CD8æ¯”çŽ‡ã®æŠ€è¡“é–“å·®ç•°
+4. **CXCR3è»¸**: AINé–¢é€£ã‚·ã‚°ãƒãƒãƒ£ã®å†ç¾æ€§è©•ä¾¡
+
+## CosMXã¨ã®æ¯”è¼ƒ
+
+**æŠ€è¡“çš„å·®ç•°:**
+- ç©ºé–“æƒ…å ±ã®æœ‰ç„¡
+- ç´°èƒžæ¤œå‡ºæ„Ÿåº¦
+- éºä¼å­ç™ºç¾ãƒ¬ãƒ™ãƒ«ã®é•ã„
+
+## ä»Šå¾Œã®è§£æžæ–¹é‡
+
+1. **è©³ç´°ãªç´°èƒžã‚¢ãƒŽãƒ†ãƒ¼ã‚·ãƒ§ãƒ³**?
+2. **ãƒ‘ã‚¹ã‚¦ã‚§ã‚¤è§£æž**?
+
+---

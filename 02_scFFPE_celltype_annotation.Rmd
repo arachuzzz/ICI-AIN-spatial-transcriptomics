@@ -1,0 +1,377 @@
+# 腎臓scFFPE細胞タイプアノテーション解析
+
+## 概要
+ICI-AKI研究における腎臓組織の単細胞RNA-seq解析で、マーカー遺伝子発現に基づく詳細な細胞タイプアノテーションを実施します。
+
+## 前提条件
+- Seuratオブジェクト `scffpe_obj` が読み込み済み
+- 必要なライブラリが読み込み済み
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, fig.width = 10, fig.height = 8)
+library(Seurat)
+library(dplyr)
+library(ggplot2)
+library(pheatmap)
+```
+
+## データ読み込み
+
+```{r load_existing_data}
+# 既存の解析済みデータを読み込み
+scffpe_obj <- readRDS("/Users/HiroyukiArai/Documents/大学院/研究結果/2024村上先生CosMX/202406 single cell FFPE data/scFFPE_kidney_analysis/results/scffpe_additional_analysis_complete_doublet_removed.rds")
+
+# 現在のメタデータ情報を確認
+cat("既存のメタデータ列:", paste(colnames(scffpe_obj@meta.data), collapse = ", "), "\n")
+cat("総細胞数:", ncol(scffpe_obj), "\n")
+cat("クラスター数:", length(unique(scffpe_obj$seurat_clusters)), "\n")
+
+# データの基本情報確認
+table(scffpe_obj$orig.ident)
+```
+
+## 1. マーカー遺伝子の定義
+
+```{r define_markers}
+# 免疫細胞マーカー遺伝子
+immune_markers <- list(
+  "T_cell" = c("CD3E", "CD3D"),
+  "CD4_T" = c("CD4"),
+  "CD8_T" = c("CD8A", "CD8B"),
+  "Treg" = c("FOXP3", "IL2RA"),
+  "NK_cell" = c("KLRD1", "NCAM1", "NKG7"),
+  "B_cell" = c("CD19", "MS4A1", "CD79A"),
+  "Plasma_cell" = c("IGHG1", "JCHAIN", "XBP1"),
+  "Macrophage" = c("CD14", "FCGR3A", "CD68", "CSF1R"),
+  "Dendritic_cell" = c("CLEC9A", "BATF3", "IRF8")
+)
+
+# 腎臓特異的マーカー遺伝子
+kidney_markers <- list(
+  "Proximal_Tubule" = c("LRP2", "SLC34A1", "CUBN"),
+  "Distal_Tubule" = c("SLC12A3"),
+  "Collecting_Duct" = c("AQP2", "SCNN1A"),
+  "Podocyte" = c("NPHS1", "NPHS2", "WT1"),
+  "Endothelial" = c("PECAM1", "VWF", "ENG"),
+  "Fibroblast" = c("COL1A1", "DCN", "LUM"),
+  "Pericyte" = c("PDGFRB", "RGS5")
+)
+
+# 全マーカー遺伝子リストの作成
+all_markers <- c(unlist(immune_markers), unlist(kidney_markers))
+available_markers <- intersect(all_markers, rownames(scffpe_obj))
+
+cat("利用可能なマーカー遺伝子数:", length(available_markers), "\n")
+cat("利用可能マーカー:", paste(available_markers, collapse = ", "), "\n")
+```
+
+## 2. 各クラスターの高発現遺伝子解析
+
+```{r cluster_top_genes}
+# 各クラスターでのマーカー遺伝子平均発現量を計算
+marker_expression <- AverageExpression(scffpe_obj, 
+                                     features = available_markers, 
+                                     group.by = "seurat_clusters", 
+                                     slot = "data")
+
+# 各クラスターの高発現遺伝子トップ10を抽出
+all_clusters <- sort(unique(as.numeric(as.character(scffpe_obj$seurat_clusters))))
+cat("検出されたクラスター数:", length(all_clusters), "\n")
+cat("クラスター番号:", paste(all_clusters, collapse = ", "), "\n")
+cluster_top_genes <- list()
+
+for(cluster in all_clusters) {
+  # クラスター列名を確認
+  cluster_col_name <- colnames(marker_expression$RNA)[grepl(paste0("^", cluster, "$"), 
+                                                             gsub("^g", "", colnames(marker_expression$RNA)))]
+  
+  if(length(cluster_col_name) > 0) {
+    cluster_data <- marker_expression$RNA[, cluster_col_name]
+    top_genes <- head(sort(cluster_data, decreasing = TRUE), 10)
+    cluster_top_genes[[paste0("Cluster_", cluster)]] <- top_genes
+    
+    cat("=== Cluster", cluster, "の高発現遺伝子 ===\n")
+    print(top_genes)
+    cat("\n")
+  } else {
+    cat("⚠️ Cluster", cluster, "が見つかりません\n\n")
+  }
+}
+```
+
+## 3. マーカー遺伝子発現ヒートマップ
+
+```{r marker_heatmap, fig.width=12, fig.height=10}
+# マーカー遺伝子発現のヒートマップ作成
+marker_matrix <- as.matrix(marker_expression$RNA)
+marker_matrix_scaled <- t(scale(t(marker_matrix)))
+
+pheatmap(marker_matrix_scaled, 
+         cluster_rows = TRUE, 
+         cluster_cols = TRUE,
+         color = colorRampPalette(c("blue", "white", "red"))(100),
+         main = "Marker Gene Expression by Cluster",
+         fontsize_row = 8,
+         fontsize_col = 8,
+         width = 12,
+         height = 10)
+```
+
+## 4. 主要マーカーのFeaturePlot可視化
+
+```{r feature_plots, fig.width=15, fig.height=12}
+# 主要マーカーの選定
+key_markers <- c("FOXP3", "CD19", "JCHAIN", "CD14", "CSF1R", 
+                 "LRP2", "SLC12A3", "AQP2", "NPHS1", "PECAM1")
+available_key_markers <- intersect(key_markers, available_markers)
+
+# FeaturePlot作成
+FeaturePlot(scffpe_obj, features = available_key_markers, ncol = 3, pt.size = 0.1)
+```
+
+## 5. 細胞タイプアノテーション作成
+
+```{r create_annotation}
+# マーカー遺伝子発現パターンに基づく細胞タイプマッピング
+# Doublet除去後の実際のクラスター（0-25）に基づいて更新
+cluster_celltype_map <- c(
+  # 免疫細胞群
+  "0" = "T_cell_mixed",           # IGHG1(6.6), CD3E(3.6), CD3D(3.0), CD4(2.2)
+  "2" = "Macrophage",             # CSF1R(10.2), CD14(4.9), IRF8(6.1)
+  "3" = "NK_T_cell",              # NKG7(7.3), CD8A(7.2), KLRD1(5.8), IGHG1(6.5)
+  "4" = "B_cell",                 # MS4A1(41.6), IGHG1(13.8), CD19(6.8), CD79A(5.0)
+  "11" = "Macrophage_activated",  # CSF1R(17.7), CD14(8.0), IRF8(6.7), CD68(4.3)
+  "12" = "Plasma_cell",           # IGHG1(463!), JCHAIN(74!), XBP1(28!)
+  "13" = "Treg",                  # FOXP3(6.2), CD3E(3.7), CD4(3.3), IL2RA(2.8)
+  "17" = "NK_cell",               # KLRD1(20.0), NKG7(19.1), FCGR3A(2.3)
+  "19" = "Dendritic_cell",        # IRF8(88!), JCHAIN(8.9), SLC12A3(8.2)
+  "20" = "T_cell_CD8",            # CD8A(4.3), NKG7(3.9), IGHG1(12.8)
+  "21" = "Dendritic_cell_CLEC9A", # IRF8(87!), BATF3(10.0), CLEC9A(5.6)
+  "23" = "Dendritic_cell_minor",  # IRF8(17.0), BATF3(3.4), SLC12A3(3.5)
+  "24" = "Mixed_immune",          # IGHG1(5.6), JCHAIN(3.8), COL1A1(1.4)
+  
+  # 腎実質細胞群
+  "5" = "Collecting_duct_principal", # SCNN1A(6.7), IGHG1(5.5), SLC12A3(2.8)
+  "6" = "Proximal_tubule",        # SLC34A1(24.6), CUBN(22.4), LRP2(21.3)
+  "7" = "Proximal_tubule_S3",     # LRP2(9.7), CUBN(3.4), SLC34A1(3.1)
+  "9" = "Distal_tubule",          # SLC12A3(88.7!), SCNN1A(9.0)
+  "10" = "Collecting_duct",       # AQP2(21.2), SCNN1A(4.9), SLC12A3(3.2)
+  "16" = "Tubule_mixed",          # AQP2(13.9), SLC12A3(6.3), IGHG1(26.1)
+  "18" = "Collecting_duct_intercalated", # SCNN1A(11.7), SLC12A3(4.3)
+  "22" = "Podocyte",              # NPHS2(41.8!), NPHS1(35.8!), WT1(13.6)
+  
+  # 間質・血管系
+  "1" = "Fibroblast",             # COL1A1(36.3!), DCN(9.1), PDGFRB(8.2)
+  "8" = "Endothelial",            # ENG(14.9), PECAM1(12.5), VWF(3.9)
+  "14" = "Pericyte",              # PDGFRB(23.0!), COL1A1(13.1), RGS5(8.2)
+  "15" = "Endothelial_activated", # PECAM1(14.8), ENG(10.0), VWF(1.5)
+  "25" = "Fibroblast_activated"   # COL1A1(29.6!), DCN(2.5), PDGFRB(2.3)
+)
+
+# メタデータに細胞タイプ情報を効率的に追加
+scffpe_obj@meta.data$detailed_celltype <- cluster_celltype_map[as.character(scffpe_obj@meta.data$seurat_clusters)]
+
+# NA処理（存在しないクラスターへの対処）
+na_count <- sum(is.na(scffpe_obj@meta.data$detailed_celltype))
+if(na_count > 0) {
+  cat("⚠️ アノテーションされていないクラスターがあります:", na_count, "細胞\n")
+  cat("アノテーションされていないクラスター番号:", 
+      paste(sort(unique(scffpe_obj@meta.data$seurat_clusters[is.na(scffpe_obj@meta.data$detailed_celltype)])), 
+            collapse = ", "), "\n")
+  cat("これらの細胞は 'Unassigned' として扱います\n")
+  scffpe_obj@meta.data$detailed_celltype[is.na(scffpe_obj@meta.data$detailed_celltype)] <- "Unassigned"
+}
+
+# 主要カテゴリの作成
+scffpe_obj@meta.data$major_celltype <- case_when(
+  grepl("T_cell|NK|Treg", scffpe_obj@meta.data$detailed_celltype) ~ "T_NK_cells",
+  grepl("B_cell|Plasma", scffpe_obj@meta.data$detailed_celltype) ~ "B_Plasma_cells", 
+  grepl("Macrophage|Dendritic", scffpe_obj@meta.data$detailed_celltype) ~ "Myeloid_cells",
+  grepl("Proximal|Distal|Collecting|Tubule", scffpe_obj@meta.data$detailed_celltype) ~ "Tubular_cells",
+  grepl("Podocyte", scffpe_obj@meta.data$detailed_celltype) ~ "Glomerular_cells",
+  grepl("Endothelial", scffpe_obj@meta.data$detailed_celltype) ~ "Endothelial_cells",
+  grepl("Fibroblast|Pericyte", scffpe_obj@meta.data$detailed_celltype) ~ "Stromal_cells",
+  TRUE ~ "Other"
+)
+
+# アノテーション結果の確認
+cat("\n=== 詳細細胞タイプ分布 ===\n")
+celltype_counts <- table(scffpe_obj@meta.data$detailed_celltype)
+print(sort(celltype_counts, decreasing = TRUE))
+
+cat("\n=== 主要細胞タイプ分布 ===\n") 
+print(table(scffpe_obj@meta.data$major_celltype))
+
+cat("\n=== クラスター別細胞タイプ ===\n")
+cluster_celltype_df <- data.frame(
+  Cluster = names(cluster_celltype_map),
+  CellType = as.character(cluster_celltype_map)
+)
+print(cluster_celltype_df[order(as.numeric(cluster_celltype_df$Cluster)), ])
+```
+
+## 6. アノテーション付きUMAP可視化
+
+```{r annotated_umap, fig.width=14, fig.height=10}
+# クラスター番号付きUMAP
+p1 <- DimPlot(scffpe_obj, reduction = "umap", group.by = "seurat_clusters", 
+        label = TRUE, label.size = 4, pt.size = 0.3) +
+  ggtitle("Seurat Clusters (0-25)") +
+  theme(legend.position = "none")
+
+# 細胞タイプ別UMAP
+p2 <- DimPlot(scffpe_obj, reduction = "umap", group.by = "detailed_celltype", 
+        label = TRUE, label.size = 3, repel = TRUE, pt.size = 0.3) +
+  ggtitle("Detailed Cell Type Annotation") +
+  theme(legend.position = "bottom", legend.text = element_text(size = 8))
+
+# 並べて表示
+library(patchwork)
+p1 / p2
+print(p2)
+```
+
+## 7. 主要細胞タイプカテゴリ別表示
+
+```{r major_categories, fig.width=12, fig.height=8}
+
+# 主要カテゴリ別UMAP
+DimPlot(scffpe_obj, reduction = "umap", group.by = "major_celltype", 
+        label = TRUE, label.size = 4, repel = TRUE, pt.size = 0.3) +
+  ggtitle("Major Cell Type Categories")
+```
+
+## 8. サンプル別細胞タイプ分布
+
+```{r sample_celltype, fig.width=14, fig.height=6}
+# サンプル別の細胞タイプ分布
+sample_celltype_table <- table(scffpe_obj$orig.ident, scffpe_obj$major_celltype)
+sample_celltype_prop <- prop.table(sample_celltype_table, margin = 1)
+
+# 分布の可視化
+library(reshape2)
+sample_celltype_df <- melt(sample_celltype_prop)
+colnames(sample_celltype_df) <- c("Sample", "CellType", "Proportion")
+
+ggplot(sample_celltype_df, aes(x = Sample, y = Proportion, fill = CellType)) +
+  geom_bar(stat = "identity") +
+  theme_minimal() +
+  labs(title = "Cell Type Distribution by Sample",
+       x = "Sample", y = "Proportion") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+## 9. 既存ファイルへのアノテーション追記
+
+```{r update_existing_file}
+# 既存のメタデータを保持しながらアノテーション情報を追加
+# (既存のT細胞解析結果などを保持)
+
+# アノテーション前のメタデータ列数確認
+original_metadata_cols <- ncol(scffpe_obj@meta.data)
+cat("アノテーション前のメタデータ列数:", original_metadata_cols, "\n")
+
+# 新しいアノテーション情報を直接メタデータに追加（エラー回避）
+# セクション5で既に追加済みの場合はスキップ
+if(!"detailed_celltype" %in% colnames(scffpe_obj@meta.data)) {
+  scffpe_obj@meta.data$detailed_celltype <- cluster_celltype_map[as.character(scffpe_obj@meta.data$seurat_clusters)]
+}
+
+if(!"major_celltype" %in% colnames(scffpe_obj@meta.data)) {
+  scffpe_obj@meta.data$major_celltype <- case_when(
+    grepl("T_cell|NK", scffpe_obj@meta.data$detailed_celltype) ~ "T_NK_cells",
+    grepl("B_cell|Plasma", scffpe_obj@meta.data$detailed_celltype) ~ "B_Plasma_cells", 
+    grepl("Macrophage|Dendritic", scffpe_obj@meta.data$detailed_celltype) ~ "Myeloid_cells",
+    grepl("Proximal|Distal|Collecting", scffpe_obj@meta.data$detailed_celltype) ~ "Tubular_cells",
+    grepl("Podocyte", scffpe_obj@meta.data$detailed_celltype) ~ "Glomerular_cells",
+    grepl("Endothelial", scffpe_obj@meta.data$detailed_celltype) ~ "Endothelial_cells",
+    grepl("Fibroblast|Pericyte", scffpe_obj@meta.data$detailed_celltype) ~ "Stromal_cells",
+    TRUE ~ "Other"
+  )
+}
+
+# アノテーション後のメタデータ列数確認
+updated_metadata_cols <- ncol(scffpe_obj@meta.data)
+cat("アノテーション後のメタデータ列数:", updated_metadata_cols, "\n")
+cat("追加された列数:", updated_metadata_cols - original_metadata_cols, "\n")
+
+# メタデータの最終確認
+cat("現在のメタデータ列:\n")
+print(colnames(scffpe_obj@meta.data))
+
+# アノテーション結果の確認
+cat("\n=== 最終的な細胞タイプ分布 ===\n")
+print(table(scffpe_obj@meta.data$major_celltype))
+```
+
+## 10. 元ファイルに上書き保存
+
+```{r save_updated_file}
+# 既存のファイルパスに上書き保存
+# 注意: これにより元のファイルが更新されます
+original_file_path <- "/Users/HiroyukiArai/Documents/大学院/研究結果/2024村上先生CosMX/202406 single cell FFPE data/scFFPE_kidney_analysis/results/scffpe_additional_analysis_complete_doublet_removed.rds"
+
+# バックアップの作成（推奨）
+backup_file_path <- "/Users/HiroyukiArai/Documents/大学院/研究結果/2024村上先生CosMX/202406 single cell FFPE data/scFFPE_kidney_analysis/results/scffpe_additional_analysis_complete_doublet_removed_backup.rds"
+
+# 元ファイルをバックアップ
+file.copy(original_file_path, backup_file_path, overwrite = TRUE)
+cat("バックアップファイル作成: scffpe_additional_analysis_complete_doublet_removed_backup.rds\n")
+
+# アノテーション情報を追加した状態で元ファイルを更新
+saveRDS(scffpe_obj, original_file_path)
+
+# 追加ファイルの保存（オプション）
+results_dir <- "/Users/HiroyukiArai/Documents/大学院/研究結果/2024村上先生CosMX/202406 single cell FFPE data/scFFPE_kidney_analysis/results/"
+
+# 細胞タイプマッピング情報の保存
+write.csv(data.frame(
+  Cluster = names(cluster_celltype_map),
+  CellType = cluster_celltype_map
+), file.path(results_dir, "cluster_celltype_mapping_doublet_removed.csv"), row.names = FALSE)
+
+# 各クラスターの高発現遺伝子情報の保存
+cluster_genes_df <- do.call(rbind, lapply(names(cluster_top_genes), function(cluster) {
+  genes <- cluster_top_genes[[cluster]]
+  data.frame(
+    Cluster = cluster,
+    Gene = names(genes),
+    Expression = as.numeric(genes),
+    Rank = 1:length(genes)
+  )
+}))
+
+write.csv(cluster_genes_df, file.path(results_dir, "cluster_top_genes_doublet_removed.csv"), row.names = FALSE)
+
+cat("\n=== ファイル更新完了 ===\n")
+cat("✅ 元ファイル更新: scffpe_additional_analysis_complete_doublet_removed.rds\n")
+cat("✅ バックアップ作成: scffpe_additional_analysis_complete_doublet_removed_backup.rds\n") 
+cat("✅ マッピング情報: cluster_celltype_mapping_doublet_removed.csv\n")
+cat("✅ 高発現遺伝子: cluster_top_genes_doublet_removed.csv\n")
+
+# 更新されたメタデータの最終確認
+cat("\n現在のメタデータ列:\n")
+print(colnames(scffpe_obj@meta.data))
+```
+
+## 10. 解析結果サマリー
+
+```{r summary}
+cat("=== 細胞タイプアノテーション結果サマリー ===\n")
+cat("総細胞数:", ncol(scffpe_obj), "\n")
+cat("総クラスター数:", length(unique(scffpe_obj$seurat_clusters)), "\n")
+cat("同定された細胞タイプ数:", length(unique(scffpe_obj$detailed_celltype)), "\n\n")
+
+cat("主要細胞タイプの構成:\n")
+major_counts <- table(scffpe_obj$major_celltype)
+major_props <- round(prop.table(major_counts) * 100, 1)
+for(i in 1:length(major_props)) {
+  cat("-", names(major_props)[i], ":", major_counts[i], "cells (", major_props[i], "%)\n")
+}
+
+cat("\n特記事項:\n")
+cat("- Cluster 11 (Plasma_cell): IGHG1発現値429 - 極めて活発な抗体産生\n")
+cat("- Cluster 19, 23 (Dendritic_cell): IRF8発現値80超 - 強い免疫活性化\n")
+cat("- Cluster 7 (Proximal_tubule): 典型的な近位尿細管マーカープロファイル\n")
+cat("- Cluster 21 (Podocyte): NPHS1, NPHS2, WT1の完璧な共発現\n")
+```
