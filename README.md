@@ -80,8 +80,8 @@ All analyses were performed in R. Key packages and versions:
 ## Contact
 
 Hiroyuki Arai  
-[Institution to be added]  
-[Email to be added]
+[Washington University in St. Louis]  
+[araih@wustl.edu]
 
 ## License
 
