@@ -1,4 +1,4 @@
-# Integrated Spatial and Single-Cell Transcriptomics of Matched Human Kidney Biopsies Reveals Distinct Immune Architecture in Immune Checkpoint Inhibitor-Associated Acute Kidney Injury
+# 20260327 Integrated Spatial and Single-Cell Transcriptomics of Matched Human Kidney Biopsies Reveals Distinct Immune Architecture in Immune Checkpoint Inhibitor-Associated Acute Kidney Injury
 
 ## Overview
 
